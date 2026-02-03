@@ -136,7 +136,6 @@ export function buildPromptBarRequest(
   mode: 'selection' | 'continuation',
 ): GenerateRequest {
   const { doc, selection } = editor.state;
-  const fullText = doc.textBetween(0, doc.content.size, '\n', '');
 
   if (mode === 'selection') {
     const { from, to } = selection;

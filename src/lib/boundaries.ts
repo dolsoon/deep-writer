@@ -19,7 +19,6 @@ const SENTENCE_TERMINATORS = /[.?!]/;
  * Accounts for the fact that ProseMirror positions include node boundaries.
  */
 export function posToCharIndex(doc: ProseMirrorNode, pos: number): number {
-  const text = doc.textBetween(0, doc.content.size, '', '\n');
   // textBetween with pos gives us the text up to that position
   const textBefore = doc.textBetween(0, Math.min(pos, doc.content.size), '', '\n');
   return textBefore.length;

@@ -15,7 +15,7 @@ interface PromptBarProps {
 
 // --- Component ---
 
-export function PromptBar({ editor, goal, onSubmit, disabled }: PromptBarProps) {
+export function PromptBar({ editor, onSubmit, disabled }: PromptBarProps) {
   const [prompt, setPrompt] = useState('');
   const isGenerating = useLoadingStore((s) => s.isGenerating);
 

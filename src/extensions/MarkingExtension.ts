@@ -411,9 +411,7 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
 
             const pluginState = markingPluginKey.getState(view.state) as MarkingPluginState;
 
-            // Get the word at click position for edit segment
-            const wordRange = getWordBoundary(view.state.doc, pos);
-            // Expand to sentence for a more useful edit region
+            // Expand to sentence for a useful edit region
             const sentenceRange = getSentenceBoundary(view.state.doc, pos);
             const editRange = sentenceRange;
             const originalText = view.state.doc.textBetween(
