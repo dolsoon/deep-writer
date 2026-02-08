@@ -65,34 +65,14 @@
   background-color: rgba(34, 197, 94, 0.18);
 }
 
-/* Marking selection styles */
-.marking-selection-word {
+/* Marking selection style (unified for all levels) */
+.marking-selection {
   background-color: rgb(219 234 254);
   border-radius: 2px;
 }
 
-.marking-selection-phrase {
-  background-color: rgb(199 210 254);
-  border-bottom: 2px dashed rgb(129 140 248);
-  border-radius: 2px;
-}
-
-.marking-selection-sentence {
-  background-color: rgb(224 231 255);
-  border-bottom: 2px solid rgb(99 102 241);
-  border-radius: 2px;
-}
-
-:where(.dark, .dark *) .marking-selection-word {
+:where(.dark, .dark *) .marking-selection {
   background-color: rgba(59, 130, 246, 0.15);
-}
-:where(.dark, .dark *) .marking-selection-phrase {
-  background-color: rgba(99, 102, 241, 0.2);
-  border-bottom-color: rgba(129, 140, 248, 0.6);
-}
-:where(.dark, .dark *) .marking-selection-sentence {
-  background-color: rgba(99, 102, 241, 0.15);
-  border-bottom-color: rgba(99, 102, 241, 0.6);
 }
 
 /* Alternative Suggestions Tooltip */
@@ -129,6 +109,18 @@
   outline-offset: -2px;
 }
 
+.alternatives-tooltip-item-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #4338ca;
+  background-color: rgba(99, 102, 241, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
 .alternatives-tooltip-loading {
   padding: 8px 12px;
   display: flex;
@@ -150,6 +142,15 @@
 
 .alternatives-tooltip-skeleton:nth-child(3) {
   width: 70%;
+}
+
+/* Chat typing indicator */
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+.typing-dot {
+  animation: typing-bounce 1.2s infinite;
 }
 
 @keyframes alternatives-skeleton-pulse {
@@ -188,6 +189,45 @@
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+.alternatives-tooltip-regenerate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: transparent;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.alternatives-tooltip-regenerate:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+  color: #6b7280;
+}
+
+/* Word-level diff highlighting in tooltip suggestions */
+.alt-diff-equal {
+  color: #6b7280;
+}
+
+.alt-diff-added {
+  color: #1f2937;
+  font-weight: 600;
+  background-color: rgba(34, 197, 94, 0.1);
+  border-radius: 2px;
+}
+
+/* Red background highlight on original words being replaced */
+.word-highlight-removed {
+  background-color: rgba(239, 68, 68, 0.18);
+  border-radius: 2px;
+}
+
 /* Dark mode for Alternative Suggestions Tooltip */
 :where(.dark, .dark *) .alternatives-tooltip {
   background-color: #1f2937;
@@ -201,6 +241,11 @@
 
 :where(.dark, .dark *) .alternatives-tooltip-item:hover {
   background-color: rgba(59, 130, 246, 0.15);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-item-label {
+  color: #a5b4fc;
+  background-color: rgba(129, 140, 248, 0.15);
 }
 
 :where(.dark, .dark *) .alternatives-tooltip-skeleton {
@@ -220,6 +265,161 @@
 
 :where(.dark, .dark *) .alternatives-tooltip-retry:hover {
   background-color: rgba(255, 255, 255, 0.08);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-regenerate {
+  color: #6b7280;
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-regenerate:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .alt-diff-equal {
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .alt-diff-added {
+  color: #e5e7eb;
+  background-color: rgba(34, 197, 94, 0.12);
+}
+
+
+:where(.dark, .dark *) .word-highlight-removed {
+  background-color: rgba(248, 113, 113, 0.2);
+}
+
+/* Prompt input inside tooltip */
+.alternatives-tooltip-prompt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.alternatives-tooltip-prompt-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.4;
+  outline: none;
+}
+
+.alternatives-tooltip-prompt-input::placeholder {
+  color: #9ca3af;
+}
+
+.alternatives-tooltip-prompt-send {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.alternatives-tooltip-prompt-send:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.alternatives-tooltip-prompt-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-prompt {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-prompt-input {
+  color: #e5e7eb;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-prompt-input::placeholder {
+  color: #6b7280;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-prompt-send {
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-prompt-send:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+}
+
+/* Selection level expansion buttons */
+.alternatives-tooltip-levels {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.alternatives-tooltip-levels-label {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-right: 4px;
+  user-select: none;
+}
+
+.alternatives-tooltip-level-btn {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.alternatives-tooltip-level-btn:hover {
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
+}
+
+.alternatives-tooltip-level-btn-active {
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+  font-weight: 500;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-levels {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-levels-label {
+  color: #6b7280;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-level-btn {
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-level-btn:hover {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-level-btn-active {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
 }
 
 /* Keep/Delete Tooltip */
@@ -269,6 +469,15 @@
   background-color: rgba(239, 68, 68, 0.22);
 }
 
+.keep-delete-btn-context {
+  background-color: rgba(107, 114, 128, 0.1);
+  color: #4b5563;
+}
+
+.keep-delete-btn-context:hover {
+  background-color: rgba(107, 114, 128, 0.2);
+}
+
 /* Dark mode: Keep/Delete Tooltip */
 :where(.dark, .dark *) .keep-delete-tooltip {
   background-color: #1f2937;
@@ -292,6 +501,234 @@
 
 :where(.dark, .dark *) .keep-delete-btn-delete:hover {
   background-color: rgba(239, 68, 68, 0.28);
+}
+
+:where(.dark, .dark *) .keep-delete-btn-context {
+  background-color: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .keep-delete-btn-context:hover {
+  background-color: rgba(156, 163, 175, 0.25);
+}
+
+/* Annotatable word spans */
+.annotatable-text {
+  line-height: 1.6;
+}
+
+.annotatable-word {
+  display: inline;
+  padding: 1px 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.1s ease, border-color 0.1s ease;
+  border-bottom: 2px solid transparent;
+}
+
+.annotatable-word:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.word-annotation-positive {
+  border-bottom-color: rgba(34, 197, 94, 0.7);
+  background-color: rgba(34, 197, 94, 0.08);
+}
+
+.word-annotation-negative {
+  border-bottom-color: rgba(239, 68, 68, 0.7);
+  background-color: rgba(239, 68, 68, 0.06);
+}
+
+/* Original text section in tooltip */
+.alternatives-tooltip-original {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+}
+
+.alternatives-tooltip-original-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+  user-select: none;
+}
+
+/* Apply button per alternative */
+.alternatives-tooltip-apply-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alternatives-tooltip-apply-btn:hover {
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Add Context tooltip (above selection) */
+.add-context-tooltip {
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Dark mode: Annotatable words */
+:where(.dark, .dark *) .annotatable-word:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+:where(.dark, .dark *) .word-annotation-positive {
+  border-bottom-color: rgba(74, 222, 128, 0.7);
+  background-color: rgba(74, 222, 128, 0.1);
+}
+
+:where(.dark, .dark *) .word-annotation-negative {
+  border-bottom-color: rgba(248, 113, 113, 0.7);
+  background-color: rgba(248, 113, 113, 0.08);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-original {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-original-label {
+  color: #6b7280;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-apply-btn {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
+}
+
+:where(.dark, .dark *) .alternatives-tooltip-apply-btn:hover {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+:where(.dark, .dark *) .add-context-tooltip {
+  background-color: #1f2937;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
+}
+
+/* Constraint highlight decorations */
+.constraint-highlight-positive,
+.constraint-highlight-keep {
+  background-color: rgba(34, 197, 94, 0.15);
+  border-radius: 2px;
+}
+
+.constraint-highlight-keep {
+  background-color: rgba(34, 197, 94, 0.28);
+  border-bottom: 2px solid rgba(34, 197, 94, 0.5);
+}
+
+.constraint-highlight-negative,
+.constraint-highlight-delete {
+  background-color: rgba(239, 68, 68, 0.12);
+  border-radius: 2px;
+}
+
+.constraint-highlight-delete {
+  background-color: rgba(239, 68, 68, 0.22);
+  border-bottom: 2px solid rgba(239, 68, 68, 0.5);
+}
+
+.constraint-highlight-context {
+  background-color: rgba(107, 114, 128, 0.1);
+  border-bottom: 1px dashed rgba(107, 114, 128, 0.4);
+  border-radius: 2px;
+}
+
+:where(.dark, .dark *) .constraint-highlight-positive,
+:where(.dark, .dark *) .constraint-highlight-keep {
+  background-color: rgba(34, 197, 94, 0.12);
+}
+
+:where(.dark, .dark *) .constraint-highlight-keep {
+  background-color: rgba(34, 197, 94, 0.22);
+  border-bottom-color: rgba(34, 197, 94, 0.5);
+}
+
+:where(.dark, .dark *) .constraint-highlight-negative,
+:where(.dark, .dark *) .constraint-highlight-delete {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+:where(.dark, .dark *) .constraint-highlight-delete {
+  background-color: rgba(239, 68, 68, 0.18);
+  border-bottom-color: rgba(239, 68, 68, 0.5);
+}
+
+:where(.dark, .dark *) .constraint-highlight-context {
+  background-color: rgba(107, 114, 128, 0.12);
+  border-bottom-color: rgba(107, 114, 128, 0.4);
+}
+
+/* Contribution level decorations (human → AI spectrum) */
+.contribution-level-5 {
+  background-color: rgba(244, 114, 106, 0.30);
+  border-radius: 2px;
+}
+
+.contribution-level-4 {
+  background-color: rgba(248, 162, 132, 0.25);
+  border-radius: 2px;
+}
+
+.contribution-level-3 {
+  background-color: rgba(176, 160, 188, 0.22);
+  border-radius: 2px;
+}
+
+.contribution-level-2 {
+  background-color: rgba(132, 168, 212, 0.22);
+  border-radius: 2px;
+}
+
+.contribution-level-1 {
+  background-color: rgba(148, 163, 178, 0.22);
+  border-radius: 2px;
+}
+
+:where(.dark, .dark *) .contribution-level-5 {
+  background-color: rgba(244, 114, 106, 0.35);
+}
+
+:where(.dark, .dark *) .contribution-level-4 {
+  background-color: rgba(248, 162, 132, 0.30);
+}
+
+:where(.dark, .dark *) .contribution-level-3 {
+  background-color: rgba(176, 160, 188, 0.28);
+}
+
+:where(.dark, .dark *) .contribution-level-2 {
+  background-color: rgba(132, 168, 212, 0.28);
+}
+
+:where(.dark, .dark *) .contribution-level-1 {
+  background-color: rgba(148, 163, 178, 0.28);
 }
 
 /* Clause selection highlight in diff view */

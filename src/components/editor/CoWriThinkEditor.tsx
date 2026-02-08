@@ -14,6 +14,13 @@ import {
   ConstraintDecorationPlugin,
   updateConstraintDecorations,
 } from '@/extensions/ConstraintDecorationPlugin';
+import {
+  ContributionDecorationPlugin,
+  updateContributionOverlay,
+  refreshContributionScores,
+} from '@/extensions/ContributionDecorationPlugin';
+import type { ScoreAccessor } from '@/extensions/ContributionDecorationPlugin';
+import { useInspectStore } from '@/stores/useInspectStore';
 import { MarkingExtension, clearMarkingSelection, expandMarkingSelection } from '@/extensions/MarkingExtension';
 import type { DragSelectionData, ConstraintData, ExpandLevel } from '@/extensions/MarkingExtension';
 import { AlternativesTooltip } from '@/components/editor/AlternativesTooltip';
@@ -103,6 +110,8 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     const activeDiffs = useEditorStore((s) => s.activeDiffs);
     const sessionGoal = useSessionStore((s) => s.session?.goal ?? '');
     const constraints = useConstraintStore((s) => s.constraints);
+    const isInspectMode = useInspectStore((s) => s.isInspectMode);
+    const graphNodeCount = useContributionGraphStore((s) => s.nodes.size);
     const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
     // Drag-selection tooltip state
@@ -181,6 +190,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
             handleDiffInteraction.current(diffId, action),
         }),
         ConstraintDecorationPlugin,
+        ContributionDecorationPlugin,
         MarkingExtension.configure({
           onProvenanceEvent: handleProvenanceEvent,
           onDragSelection: handleDragSelection,
@@ -232,6 +242,25 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
       if (!editor) return;
       updateConstraintDecorations(editor, constraints);
     }, [editor, constraints]);
+
+    // Sync contribution overlay when inspect mode changes
+    useEffect(() => {
+      if (!editor) return;
+      // Suppress overlay during active diff review (REQ-VIS-026)
+      const hasPending = useEditorStore.getState().activeDiffs.some((d) => d.state === 'pending');
+      const shouldActivate = isInspectMode && !hasPending;
+      const scoreAccessor: ScoreAccessor = (roundId, dimension) =>
+        useContributionGraphStore.getState().accumulatedScore(roundId, dimension);
+      updateContributionOverlay(editor, shouldActivate, scoreAccessor);
+    }, [editor, isInspectMode, activeDiffs]);
+
+    // Refresh contribution overlay when graph scores update
+    useEffect(() => {
+      if (!editor || !isInspectMode) return;
+      const scoreAccessor: ScoreAccessor = (roundId, dimension) =>
+        useContributionGraphStore.getState().accumulatedScore(roundId, dimension);
+      refreshContributionScores(editor, scoreAccessor);
+    }, [editor, isInspectMode, graphNodeCount]);
 
     return (
       <div

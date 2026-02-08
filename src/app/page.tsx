@@ -4,22 +4,18 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { useLoadingStore } from '@/stores/useLoadingStore';
+import { useInspectStore } from '@/stores/useInspectStore';
 import { GoalModal } from '@/components/goal/GoalModal';
 import { StartModeSelector } from '@/components/goal/StartModeSelector';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { SplitLayout } from '@/components/layout/SplitLayout';
-import { SidePanel } from '@/components/sidebar/SidePanel';
-import { SidePanelGoal } from '@/components/sidebar/SidePanelGoal';
-import { PushbackComments } from '@/components/sidebar/PushbackComments';
-import { RoundHistory } from '@/components/sidebar/RoundHistory';
-import { DocumentOutline } from '@/components/sidebar/DocumentOutline';
+import { ChatPanel } from '@/components/chat/ChatPanel';
+import { useChat } from '@/hooks/useChat';
 import {
   CoWriThinkEditor,
   type CoWriThinkEditorHandle,
 } from '@/components/editor/CoWriThinkEditor';
 import { SkeletonPlaceholder } from '@/components/editor/SkeletonPlaceholder';
-import { PromptBar } from '@/components/editor/PromptBar';
-import { RegenerateButton } from '@/components/editor/RegenerateButton';
 import { StorageWarning } from '@/components/shared/StorageWarning';
 import { DiffToolbar } from '@/components/editor/DiffToolbar';
 import { DiffSplitView } from '@/components/editor/DiffSplitView';
@@ -43,6 +39,7 @@ export default function Home() {
   const initSession = useSessionStore((s) => s.initSession);
   const loadFromStorage = useSessionStore((s) => s.loadFromStorage);
   const isGenerating = useLoadingStore((s) => s.isGenerating);
+  const isInspectMode = useInspectStore((s) => s.isInspectMode);
 
   const generation = useGeneration();
   const { theme, toggleTheme } = useTheme();
@@ -103,14 +100,6 @@ export default function Home() {
     setAppState('goal-prompt');
   }, []);
 
-  // Regenerate handler
-  const handleRegenerate = useCallback(() => {
-    const editor = editorHandleRef.current?.getEditor();
-    if (!editor) return;
-    const currentGoal = useSessionStore.getState().session?.goal ?? goal;
-    generation.regenerate(editor, currentGoal);
-  }, [goal, generation]);
-
   // Track the modified panel's editor so Accept All uses user-edited content
   const modifiedEditorRef = useRef<import('@tiptap/core').Editor | null>(null);
   const handleModifiedEditorReady = useCallback((ed: import('@tiptap/core').Editor) => {
@@ -145,13 +134,8 @@ export default function Home() {
     updateDiffs(editor, []);
   }, []);
 
-  // Prompt submit handler
-  const handlePromptSubmit = useCallback((prompt: string) => {
-    const editor = editorHandleRef.current?.getEditor();
-    if (!editor) return;
-    const currentGoal = useSessionStore.getState().session?.goal ?? goal;
-    generation.promptRequest(editor, currentGoal, prompt);
-  }, [goal, generation]);
+  // Chat hook
+  const { sendMessage } = useChat(editorHandleRef, session?.goal ?? goal);
 
   // Loading state
   if (appState === 'loading') {
@@ -225,28 +209,26 @@ export default function Home() {
                 initialContent={session?.documentState ?? ''}
               />
             </div>
-            {!hasPendingDiffs && (
-              <RegenerateButton
-                editor={editorInstance}
-                onRegenerate={handleRegenerate}
-              />
-            )}
-            {!hasPendingDiffs && (
-              <PromptBar
-                editor={editorInstance}
-                goal={session?.goal}
-                onSubmit={handlePromptSubmit}
-              />
-            )}
           </div>
         }
         sidePanel={
-          <SidePanel>
-            <SidePanelGoal />
-            <PushbackComments />
-            <RoundHistory />
-            <DocumentOutline />
-          </SidePanel>
+          isInspectMode ? (
+            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div>
+                <svg className="mx-auto mb-3 h-10 w-10 text-gray-300 dark:text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <p className="font-medium text-gray-700 dark:text-gray-300">Inspect Mode</p>
+                <p className="mt-1">Contribution details panel coming soon.</p>
+              </div>
+            </div>
+          ) : (
+            <ChatPanel
+              onSendMessage={sendMessage}
+              disabled={hasPendingDiffs}
+            />
+          )
         }
       />
     </div>
