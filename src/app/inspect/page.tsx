@@ -41,7 +41,7 @@ export default function InspectPage() {
   }, []);
 
   // Set up round analysis hook
-  useRoundAnalysis(editor);
+  useRoundAnalysis();
 
   if (!editor) {
     return (

@@ -49,6 +49,8 @@ export const ProvenancePlugin = Extension.create<ProvenancePluginOptions>({
 
           for (const tr of transactions) {
             if (!tr.docChanged) continue;
+            // Skip provenance logging for preview-only transactions
+            if (tr.getMeta('previewOnly')) continue;
 
             for (const step of tr.steps) {
               // Track mark changes (text state applied/removed)

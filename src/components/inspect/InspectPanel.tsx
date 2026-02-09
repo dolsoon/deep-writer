@@ -1,11 +1,29 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { Editor } from '@tiptap/react';
+import type { SelectedSegment } from '@/types/contribution';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { useDocumentScores } from '@/hooks/useDocumentScores';
 import { DonutChart } from './DonutChart';
 import { ProvenanceChain } from './ProvenanceChain';
 import { useRoundStore } from '@/stores/useRoundStore';
+
+// --- Types ---
+
+interface DocumentScores {
+  overall: number;
+  concept: number;
+  wording: number;
+  evaluation: number;
+  levelDistribution: {
+    level1: number;
+    level2: number;
+    level3: number;
+    level4: number;
+    level5: number;
+  };
+}
 
 // --- Color constants ---
 
@@ -29,7 +47,7 @@ function getDimensionColor(value: number): string {
 // --- Component ---
 
 export interface InspectPanelProps {
-  editor: any;
+  editor: Editor;
 }
 
 export function InspectPanel({ editor }: InspectPanelProps) {
@@ -77,7 +95,7 @@ export function InspectPanel({ editor }: InspectPanelProps) {
 
 // --- Document-level View ---
 
-function DocumentLevelView({ scores }: { scores: any }) {
+function DocumentLevelView({ scores }: { scores: DocumentScores }) {
   const overallPercentage = Math.round(scores.overall * 100);
 
   return (
@@ -109,7 +127,7 @@ function SegmentView({
   segment,
   ancestryChain,
 }: {
-  segment: any;
+  segment: SelectedSegment;
   ancestryChain: string[];
 }) {
   const overallPercentage = Math.round(segment.scores.composite * 100);

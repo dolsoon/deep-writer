@@ -50,8 +50,9 @@ export const DeletionMarkerPlugin = Extension.create({
             };
           },
 
-          apply(tr, value, oldState, _newState): DeletionMarkerState {
-            let { stored, visible } = value;
+          apply(tr, value, oldState): DeletionMarkerState {
+            const { stored: storedDecorations, visible } = value;
+            let stored = storedDecorations;
 
             // Map existing decorations through document changes
             if (tr.docChanged) {

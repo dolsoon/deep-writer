@@ -46,7 +46,7 @@ export default function Home() {
   }, []);
 
   // LLM round analysis — enriches base heuristic scores with rubric-based evaluation
-  useRoundAnalysis(readyEditor);
+  useRoundAnalysis();
 
   const session = useSessionStore((s) => s.session);
   const initSession = useSessionStore((s) => s.initSession);
@@ -125,6 +125,12 @@ export default function Home() {
     const modifiedEditor = modifiedEditorRef.current;
     if (!editor) return;
 
+    console.log('[DEBUG] handleAcceptAll 시작:', {
+      hasPendingDiffs: pendingDiffs.length,
+      hasModifiedEditor: !!modifiedEditor,
+      diffs: pendingDiffs.map(d => ({ id: d.id, roundId: d.roundId, text: d.replacementText.slice(0, 30) }))
+    });
+
     // Detect user edits in modified panel before transferring content.
     // For each diff with a roundId, count how many characters still carry
     // that roundId's ai-generated mark. If fewer than the original replacement
@@ -136,13 +142,33 @@ export default function Home() {
       if (markType) {
         // Count remaining ai-generated chars per roundId
         const aiCharsByRound = new Map<string, number>();
-        modifiedEditor.state.doc.descendants((node) => {
+        let totalMarkedNodes = 0;
+        const markDetails: any[] = [];
+        modifiedEditor.state.doc.descendants((node, pos) => {
           if (!node.isText) return;
           const tsm = node.marks.find((m) => m.type === markType);
+          if (tsm) {
+            totalMarkedNodes++;
+            markDetails.push({
+              pos,
+              text: node.text?.slice(0, 30),
+              attrs: tsm.attrs,
+              hasRoundId: !!tsm.attrs?.roundId,
+              roundId: tsm.attrs?.roundId,
+              state: tsm.attrs?.state
+            });
+          }
           const roundId = tsm?.attrs?.roundId as string | null;
           if (roundId && tsm?.attrs?.state === 'ai-generated') {
             aiCharsByRound.set(roundId, (aiCharsByRound.get(roundId) ?? 0) + (node.text?.length ?? 0));
           }
+        });
+
+        console.log('[DEBUG] modifiedEditor 마크 검사:', {
+          totalMarkedNodes,
+          markDetails,
+          aiCharsByRound: Array.from(aiCharsByRound.entries()),
+          pendingRoundIds: pendingDiffs.map(d => d.roundId).filter(Boolean)
         });
 
         // Compare against original replacement text lengths
@@ -155,7 +181,48 @@ export default function Home() {
         }
       }
 
-      editor.commands.setContent(modifiedEditor.getJSON());
+      const modifiedJSON = modifiedEditor.getJSON();
+      console.log('[DEBUG] setContent 호출 전 modifiedEditor JSON 샘플:', {
+        type: modifiedJSON.type,
+        hasContent: !!modifiedJSON.content,
+        firstNodeSample: modifiedJSON.content?.[0]
+      });
+
+      // Mark as programmatic to prevent TextStateExtension from overwriting marks
+      editor.chain().setMeta('programmaticTextState', true).setContent(modifiedJSON).run();
+
+      // Verify marks after setContent
+      setTimeout(() => {
+        const markType = editor.schema.marks.textState;
+        let foundMarks = 0;
+        const foundRoundIds = new Set<string>();
+        const afterMarkDetails: any[] = [];
+        if (markType) {
+          editor.state.doc.descendants((node, pos) => {
+            if (node.isText) {
+              const tsm = node.marks.find(m => m.type === markType);
+              if (tsm) {
+                foundMarks++;
+                afterMarkDetails.push({
+                  pos,
+                  text: node.text?.slice(0, 30),
+                  attrs: tsm.attrs,
+                  hasRoundId: !!tsm.attrs.roundId,
+                  roundId: tsm.attrs.roundId,
+                  state: tsm.attrs.state
+                });
+                if (tsm.attrs.roundId) foundRoundIds.add(tsm.attrs.roundId as string);
+              }
+            }
+          });
+        }
+        console.log('[DEBUG] setContent 후 마크 검증:', {
+          foundMarks,
+          afterMarkDetails,
+          foundRoundIds: Array.from(foundRoundIds),
+          expectedRoundIds: pendingDiffs.map(d => d.roundId).filter(Boolean)
+        });
+      }, 100);
 
       // Update D3 scores for rounds where user edited the AI text
       const graphStore = useContributionGraphStore.getState();
@@ -267,8 +334,8 @@ export default function Home() {
           </div>
         }
         sidePanel={
-          isInspectMode ? (
-            <InspectPanel editor={editorInstance} />
+          isInspectMode && readyEditor ? (
+            <InspectPanel editor={readyEditor} />
           ) : (
             <ChatPanel
               onSendMessage={sendMessage}

@@ -182,7 +182,10 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
 
     const editor = useEditor({
       extensions: [
-        StarterKit,
+        StarterKit.configure({
+          // Ensure marks are preserved
+          dropcursor: { color: '#3b82f6' },
+        }),
         TextStateExtension,
         ProvenancePlugin.configure({
           onProvenanceEvent: handleProvenanceEvent,
@@ -240,6 +243,16 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
         onEditorReady(editor);
       }
     }, [editor, onEditorReady]);
+
+    // Expose editor to window for debugging (development only)
+    useEffect(() => {
+      if (editor && typeof window !== 'undefined') {
+        (window as typeof window & { __TIPTAP_EDITOR__?: typeof editor }).__TIPTAP_EDITOR__ = editor;
+        return () => {
+          delete (window as typeof window & { __TIPTAP_EDITOR__?: typeof editor }).__TIPTAP_EDITOR__;
+        };
+      }
+    }, [editor]);
 
     // Sync decoration state when activeDiffs change externally
     useEffect(() => {

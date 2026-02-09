@@ -104,6 +104,7 @@ export function useGeneration() {
       const constraintTypes = [...new Set(constraintState.constraints.map(c => c.type))];
 
       // Create round
+      console.log('[DEBUG] 라운드 생성 전...');
       const round = useRoundStore.getState().createRound({
         type: 'generation',
         parentRounds: parentRoundIds,
@@ -114,6 +115,11 @@ export function useGeneration() {
         generationMode: 'regenerate',
         diffActions: { accepted: 0, rejected: 0, edited: 0 },
         events: [],
+      });
+      console.log('[DEBUG] 라운드 생성 완료:', {
+        roundId: round.roundId,
+        hasRoundId: !!round.roundId,
+        type: typeof round.roundId
       });
 
       // Create graph node with base scores
@@ -278,6 +284,21 @@ export function useGeneration() {
               cursorPos + text.length,
               markType.create({ state: 'ai-generated', roundId: round.roundId }),
             );
+            console.log('[DEBUG] 마크 생성 속성:', {
+              state: 'ai-generated',
+              roundId: round.roundId,
+              roundIdType: typeof round.roundId,
+              roundIdNull: round.roundId === null,
+              roundIdUndefined: round.roundId === undefined
+            });
+            console.log('[DEBUG] 마크 적용 완료:', {
+              roundId: round.roundId,
+              from: cursorPos,
+              to: cursorPos + text.length,
+              textLength: text.length
+            });
+          } else {
+            console.error('[DEBUG] ❌ textState markType을 찾을 수 없습니다!');
           }
           tr.setMeta('programmaticTextState', true);
           editor.view.dispatch(tr);
@@ -291,8 +312,35 @@ export function useGeneration() {
               marks: [{ type: 'textState', attrs: { state: 'ai-generated', roundId: round.roundId } }],
             }],
           }));
+          console.log('[DEBUG] 다중 문단 삽입:', {
+            roundId: round.roundId,
+            paragraphCount: paragraphs.length,
+            totalChars: paragraphs.join('').length
+          });
           editor.chain().insertContentAt(cursorPos, content).run();
         }
+
+        // Verify marks were applied
+        setTimeout(() => {
+          let foundMarks = 0;
+          let foundRoundId = false;
+          editor.state.doc.descendants((node) => {
+            if (node.isText) {
+              const textStateMark = node.marks.find(m => m.type.name === 'textState');
+              if (textStateMark) {
+                foundMarks++;
+                if (textStateMark.attrs.roundId === round.roundId) {
+                  foundRoundId = true;
+                }
+              }
+            }
+          });
+          console.log('[DEBUG] 마크 검증:', {
+            roundId: round.roundId,
+            foundMarks,
+            foundRoundId: foundRoundId ? '✅' : '❌'
+          });
+        }, 100);
       }
 
       // Log response provenance

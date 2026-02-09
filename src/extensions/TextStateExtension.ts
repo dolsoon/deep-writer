@@ -52,6 +52,13 @@ declare module '@tiptap/core' {
 export const TextStateExtension = Mark.create({
   name: 'textState',
 
+  addOptions() {
+    return {
+      // Disable automatic user-written mark fixing for preview/readonly editors
+      disableAutoMarkFix: false,
+    };
+  },
+
   addAttributes() {
     return {
       state: {
@@ -114,6 +121,7 @@ export const TextStateExtension = Mark.create({
 
   addProseMirrorPlugins() {
     const markType = this.type;
+    const disableAutoMarkFix = this.options.disableAutoMarkFix;
 
     // Debounce state: reuse the same inline-edit round for consecutive
     // keystrokes that edit text from the same parent roundId.
@@ -302,6 +310,9 @@ export const TextStateExtension = Mark.create({
          * Ctrl+Backspace, Cut, etc.) and records edit traces.
          */
         appendTransaction(transactions, oldState, newState) {
+          // Skip all tracking for preview/readonly editors
+          if (disableAutoMarkFix) return null;
+
           // --- Deletion detection: record edit traces for AI text removals ---
           for (const transaction of transactions) {
             if (!transaction.docChanged) continue;
@@ -357,6 +368,9 @@ export const TextStateExtension = Mark.create({
           }
 
           // --- Mark fix: ensure user-typed text gets 'user-written' mark ---
+          // Skip if disabled (for preview/readonly editors)
+          if (disableAutoMarkFix) return null;
+
           let needsFix = false;
 
           for (const transaction of transactions) {

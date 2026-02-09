@@ -33,9 +33,17 @@ export function computeDiffViews(
   // Build modified document by applying all replacements via ProseMirror transaction
   const sorted = [...pendingDiffs].sort((a, b) => a.position - b.position);
   const { tr } = editorState;
+  // Mark this transaction as programmatic to prevent automatic mark fixing
+  tr.setMeta('programmaticTextState', true);
+  tr.setMeta('previewOnly', true);
   const markType = editorState.schema.marks.textState;
 
   const modifiedHighlights: DiffHighlight[] = [];
+
+  console.log('[DEBUG] computeDiffViews - Diff 처리 시작:', {
+    diffCount: sorted.length,
+    diffs: sorted.map(d => ({ id: d.id, roundId: d.roundId, hasRoundId: !!d.roundId }))
+  });
 
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
@@ -44,11 +52,25 @@ export function computeDiffViews(
 
     // Apply ai-generated mark with roundId so modified editor carries proper marks
     if (markType && diff.roundId) {
+      console.log('[DEBUG] computeDiffViews - 마크 적용:', {
+        diffId: diff.id,
+        roundId: diff.roundId,
+        from,
+        to: from + diff.replacementText.length,
+        textLength: diff.replacementText.length
+      });
       tr.addMark(
         from,
         from + diff.replacementText.length,
         markType.create({ state: 'ai-generated', roundId: diff.roundId }),
       );
+    } else {
+      console.warn('[DEBUG] computeDiffViews - 마크 스킵:', {
+        diffId: diff.id,
+        hasMarkType: !!markType,
+        hasRoundId: !!diff.roundId,
+        roundId: diff.roundId
+      });
     }
 
     modifiedHighlights.push({
@@ -59,6 +81,33 @@ export function computeDiffViews(
 
   const modifiedState = editorState.apply(tr);
   const modifiedDocJSON = modifiedState.doc.toJSON() as Record<string, unknown>;
+
+  // Verify marks in the modified document JSON
+  let markedTextNodes = 0;
+  const jsonMarkSamples: any[] = [];
+  if (modifiedDocJSON.content && Array.isArray(modifiedDocJSON.content)) {
+    const checkNode = (node: any) => {
+      if (node.content && Array.isArray(node.content)) {
+        node.content.forEach(checkNode);
+      }
+      if (node.type === 'text' && node.marks) {
+        markedTextNodes++;
+        // Sample first few marked text nodes
+        if (jsonMarkSamples.length < 3) {
+          jsonMarkSamples.push({
+            text: node.text?.slice(0, 30),
+            marks: node.marks
+          });
+        }
+      }
+    };
+    modifiedDocJSON.content.forEach(checkNode);
+  }
+  console.log('[DEBUG] computeDiffViews - JSON 생성 완료:', {
+    markedTextNodes,
+    jsonMarkSamples,
+    hasContent: !!modifiedDocJSON.content
+  });
 
   return {
     originalDocJSON,
@@ -78,6 +127,11 @@ export function applyAllDiffs(
   const { tr } = editor.state;
   const markType = editor.schema.marks.textState;
 
+  console.log('[DEBUG] applyAllDiffs 시작:', {
+    diffCount: sorted.length,
+    diffs: sorted.map(d => ({ id: d.id, roundId: d.roundId, text: d.replacementText.slice(0, 30) }))
+  });
+
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
     const to = tr.mapping.map(diff.position + diff.originalText.length);
@@ -85,6 +139,13 @@ export function applyAllDiffs(
 
     // Apply ai-generated mark with roundId to the replacement text
     if (markType) {
+      console.log('[DEBUG] Diff 마크 적용:', {
+        diffId: diff.id,
+        roundId: diff.roundId,
+        roundIdExists: !!diff.roundId,
+        from,
+        to: from + diff.replacementText.length
+      });
       tr.addMark(
         from,
         from + diff.replacementText.length,

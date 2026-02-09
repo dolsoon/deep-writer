@@ -67,7 +67,9 @@ function DiffPanel({ docJSON, highlights, highlightClass, label, editable = fals
     {
       extensions: [
         StarterKit,
-        TextStateExtension,
+        TextStateExtension.configure({
+          disableAutoMarkFix: true, // Preserve marks from computeDiffViews
+        }),
         createHighlightExtension(highlights, highlightClass),
       ],
       content: docJSON,

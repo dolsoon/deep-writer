@@ -1,12 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { Editor } from '@tiptap/react';
 import { useRoundStore } from '@/stores/useRoundStore';
 import { useChatStore } from '@/stores/useChatStore';
 import { useConstraintStore } from '@/stores/useConstraintStore';
 import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
-import { useInspectStore } from '@/stores/useInspectStore';
 import type { RoundAnalysisRequest, RoundAnalysis } from '@/types/contribution';
 
 // --- Constants ---
@@ -27,13 +25,13 @@ function deriveUserPostAction(
 
 // --- Hook ---
 
-export function useRoundAnalysis(_editor: Editor | null): void {
-  const isInspectMode = useInspectStore((s) => s.isInspectMode);
+export function useRoundAnalysis(): void {
+  // Subscribe to graph nodes to trigger analysis when new rounds are added
+  const graphNodes = useContributionGraphStore((s) => s.nodes);
   const analyzingRef = useRef(false);
   const attemptedRef = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!isInspectMode) return;
     if (analyzingRef.current) return;
 
     const run = async () => {
@@ -137,5 +135,5 @@ export function useRoundAnalysis(_editor: Editor | null): void {
     };
 
     run();
-  }, [isInspectMode]);
+  }, [graphNodes]);
 }

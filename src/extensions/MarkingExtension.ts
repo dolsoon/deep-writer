@@ -128,7 +128,6 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
 
   addProseMirrorPlugins() {
     const onDragSelection = this.options.onDragSelection ?? null;
-    const onConstraintAdd = this.options.onConstraintAdd ?? null;
 
     // Drag detection state (closure-scoped, not plugin state).
     // We measure the distance between mousedown and mouseup to distinguish
