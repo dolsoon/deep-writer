@@ -14,9 +14,11 @@ import {
   scanDocument,
   buildRequest,
   buildPromptBarRequest,
+  buildSmartEditRequest,
   callGenerateAPI,
   GenerationError,
 } from '@/services/generation';
+import type { GapBasedResponse, SmartEditResponse } from '@/types/generation';
 
 // --- Types ---
 
@@ -88,7 +90,7 @@ export function useGeneration() {
 
       // Build request and call API
       const request = buildRequest(goal, scan, 'regenerate');
-      const response = await callGenerateAPI(request);
+      const response = await callGenerateAPI(request) as GapBasedResponse;
 
       // Collect parentRounds from gaps being replaced
       const parentRoundIds: string[] = [];
@@ -208,7 +210,7 @@ export function useGeneration() {
         selectionTo: selection.to,
       });
 
-      const response = await callGenerateAPI(request);
+      const response = await callGenerateAPI(request) as GapBasedResponse;
 
       // Collect parentRounds from selection range
       const parentRoundIds = selection.empty ? [] : collectRoundIds(editor, selection.from, selection.to);
@@ -375,6 +377,112 @@ export function useGeneration() {
   }, []);
 
   /**
+   * Execute a smart-edit request: send full document + editing instruction,
+   * receive edited document, compute diff, and apply as diffs.
+   * Used by the Chat component for edit intent.
+   */
+  const smartEditRequest = useCallback(async (
+    editor: Editor,
+    goal: string,
+    promptText: string,
+  ) => {
+    setState({ status: 'loading', error: null, retryable: false });
+    useLoadingStore.getState().startGeneration();
+    useEditorStore.getState().setReadOnly(true);
+
+    try {
+      // 1. Save original document
+      const originalText = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n\n');
+
+      // 2. Build request and call API
+      const request = buildSmartEditRequest(editor, goal, promptText);
+
+      // Log provenance
+      logProvenance('ai-generation-requested', {
+        mode: 'smart-edit',
+        userRequest: promptText,
+        documentLength: originalText.length,
+      });
+
+      const response = await callGenerateAPI(request) as SmartEditResponse;
+
+      // 3. Check if document changed
+      if (originalText === response.editedDocument) {
+        // No changes - success but nothing to show
+        setState({ status: 'complete', error: null, retryable: false });
+        useLoadingStore.getState().stopGeneration();
+        useEditorStore.getState().setReadOnly(false);
+        return;
+      }
+
+      // 4. Create round (provenance tracking)
+      const constraintState = useConstraintStore.getState();
+      const constraintTypes = [...new Set(constraintState.constraints.map(c => c.type))];
+
+      const round = useRoundStore.getState().createRound({
+        type: 'generation',
+        parentRounds: [],
+        prompt: promptText,
+        promptLength: promptText.length,
+        constraintCount: constraintState.constraints.length,
+        constraintTypes,
+        generationMode: 'smart-edit',
+        diffActions: { accepted: 0, rejected: 0, edited: 0 },
+        events: [],
+      });
+
+      // 5. Create graph node with base scores
+      const d1 = computeD1Base('ai-generated', 'generation');
+      const d2 = computeD2Base({
+        promptLength: promptText.length,
+        constraintCount: constraintState.constraints.length,
+        type: 'generation',
+      });
+      const d3 = computeD3Base('accepted');
+      useContributionGraphStore.getState().addNode(round.roundId, { d1, d2, d3 }, {
+        prompt: promptText,
+        constraints: constraintTypes,
+        action: 'accepted',
+        type: 'generation',
+        previousText: originalText,
+        resultText: response.editedDocument,
+      });
+
+      // 6. Apply as single diff for entire document
+      // This is simpler and more reliable than complex position mapping
+      useEditorStore.getState().addDiff(
+        originalText,
+        response.editedDocument,
+        0,
+        round.roundId,
+      );
+
+      // 7. Update diff UI
+      const activeDiffs = useEditorStore.getState().getActiveDiffs();
+      updateDiffs(editor, activeDiffs);
+
+      // Log response provenance
+      logProvenance('ai-generation-received', {
+        mode: 'smart-edit',
+        changeCount: textChanges.length,
+        userRequest: promptText,
+      });
+
+      setState({ status: 'complete', error: null, retryable: false });
+    } catch (err) {
+      const message = err instanceof GenerationError
+        ? err.message
+        : 'An unexpected error occurred. Please try again.';
+      const retryable = err instanceof GenerationError ? err.retryable : true;
+
+      setState({ status: 'error', error: message, retryable });
+    } finally {
+      useLoadingStore.getState().stopGeneration();
+      useEditorStore.getState().setReadOnly(false);
+    }
+  }, []);
+
+  /**
    * Clear the error state and return to idle.
    */
   const clearError = useCallback(() => {
@@ -385,6 +493,7 @@ export function useGeneration() {
     ...state,
     regenerate,
     promptRequest,
+    smartEditRequest,
     clearError,
   };
 }

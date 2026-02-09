@@ -174,6 +174,30 @@ export function buildPromptBarRequest(
   };
 }
 
+/**
+ * Build a GenerateRequest for smart-edit mode (chat editing).
+ */
+export function buildSmartEditRequest(
+  editor: Editor,
+  goal: string,
+  promptText: string,
+): GenerateRequest {
+  const fullText = editor.state.doc.textBetween(
+    0,
+    editor.state.doc.content.size,
+    '\n\n',  // Use double newline for paragraph separation
+  );
+
+  return {
+    goal,
+    document: fullText,
+    gaps: [],
+    constraints: [],
+    userRequest: promptText,
+    mode: 'smart-edit',
+  };
+}
+
 // --- API Communication ---
 
 /**

@@ -4,12 +4,17 @@ import type { GenerateRequest, GenerateResponse } from '@/types/generation';
 
 // --- Prompt Templates ---
 
-const SYSTEM_PROMPT = `You are a writing assistant for CoWriThink. Generate text ONLY for the [GAP] markers. Preserve all other text exactly. Match the tone, style, and argument direction of the preserved text.
+const SYSTEM_PROMPT_GAP_FILLING = `You are a writing assistant for CoWriThink. Generate text ONLY for the [GAP] markers. Preserve all other text exactly. Match the tone, style, and argument direction of the preserved text.
 
 IMPORTANT: Return your response as valid JSON in this exact format:
 { "gaps": [{ "id": "<gap_id>", "text": "<generated text>" }] }
 
 Do not include any other text, explanations, or markdown formatting outside the JSON.`;
+
+const SYSTEM_PROMPT_SMART_EDIT = `You are a writing assistant. The user provides an editing instruction.
+Return the COMPLETE edited document incorporating their changes.
+
+Return valid JSON: { "editedDocument": "the full edited text" }`;
 
 function buildUserPrompt(request: GenerateRequest): string {
   const parts: string[] = [];
@@ -17,7 +22,14 @@ function buildUserPrompt(request: GenerateRequest): string {
   parts.push(`User Goal: ${request.goal}`);
   parts.push('');
 
-  if (request.mode === 'continuation') {
+  if (request.mode === 'smart-edit') {
+    parts.push('Current document:');
+    parts.push(request.document);
+    parts.push('');
+    parts.push(`User's editing instruction: ${request.userRequest ?? 'Edit the document'}`);
+    parts.push('');
+    parts.push('Return the complete edited document as: { "editedDocument": "<full edited text>" }');
+  } else if (request.mode === 'continuation') {
     parts.push('Document context:');
     parts.push(request.document);
     parts.push('');
@@ -146,6 +158,31 @@ function repairTruncatedResponse(content: string, gapIds: string[]): GenerateRes
   return null;
 }
 
+/**
+ * Parse smart-edit mode response.
+ * Expected format: { "editedDocument": "..." }
+ */
+function parseSmartEditResponse(content: string): { editedDocument: string } | null {
+  // Strip markdown code fences if present
+  let cleaned = content.trim();
+  const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    if (typeof parsed.editedDocument === 'string') {
+      return { editedDocument: parsed.editedDocument };
+    }
+  } catch {
+    // Not valid JSON
+  }
+
+  return null;
+}
+
 // --- Request Validation ---
 
 function validateRequest(body: unknown): body is GenerateRequest {
@@ -156,7 +193,7 @@ function validateRequest(body: unknown): body is GenerateRequest {
   if (typeof req.document !== 'string') return false;
   if (!Array.isArray(req.gaps)) return false;
   if (!Array.isArray(req.constraints)) return false;
-  if (!['regenerate', 'selection', 'continuation'].includes(req.mode as string)) return false;
+  if (!['regenerate', 'selection', 'continuation', 'smart-edit'].includes(req.mode as string)) return false;
 
   return true;
 }
@@ -204,6 +241,9 @@ export async function POST(request: NextRequest) {
 
   // Build prompt
   const userPrompt = buildUserPrompt(generateRequest);
+  const systemPrompt = generateRequest.mode === 'smart-edit'
+    ? SYSTEM_PROMPT_SMART_EDIT
+    : SYSTEM_PROMPT_GAP_FILLING;
 
   // Call OpenAI API with timeout
   const openai = new OpenAI({ apiKey });
@@ -215,7 +255,7 @@ export async function POST(request: NextRequest) {
       {
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.7,
@@ -242,25 +282,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse response
-    const gapIds = generateRequest.gaps.map((g) => g.id);
-    let parsed = parseGenerateResponse(content, gapIds);
+    // Parse response based on mode
+    if (generateRequest.mode === 'smart-edit') {
+      const parsed = parseSmartEditResponse(content);
 
-    // If standard parsing failed and response was truncated, try to salvage partial text
-    if (!parsed && finishReason === 'length') {
-      console.warn('[/api/generate] Response truncated (finish_reason: length). Attempting repair.');
-      parsed = repairTruncatedResponse(content, gapIds);
+      if (!parsed) {
+        console.error('[/api/generate] Smart-edit parse failed. Raw:', content.slice(0, 1000));
+        return NextResponse.json(
+          { error: 'AI response was incomplete. Please try again.', retryable: true },
+          { status: 502 },
+        );
+      }
+
+      // Validate that edited document is not suspiciously short (possible truncation)
+      if (parsed.editedDocument.length < generateRequest.document.length * 0.3) {
+        console.error('[/api/generate] Edited document suspiciously short. Possible truncation.');
+        return NextResponse.json(
+          { error: 'AI response was incomplete. Please try again.', retryable: true },
+          { status: 502 },
+        );
+      }
+
+      return NextResponse.json(parsed);
+    } else {
+      // Gap-filling modes
+      const gapIds = generateRequest.gaps.map((g) => g.id);
+      let parsed = parseGenerateResponse(content, gapIds);
+
+      // If standard parsing failed and response was truncated, try to salvage partial text
+      if (!parsed && finishReason === 'length') {
+        console.warn('[/api/generate] Response truncated (finish_reason: length). Attempting repair.');
+        parsed = repairTruncatedResponse(content, gapIds);
+      }
+
+      if (!parsed) {
+        console.error('[/api/generate] Parse failed. Raw:', content.slice(0, 1000));
+        return NextResponse.json(
+          { error: 'AI response was incomplete. Please try again.', retryable: true },
+          { status: 502 },
+        );
+      }
+
+      return NextResponse.json(parsed);
     }
-
-    if (!parsed) {
-      console.error('[/api/generate] Parse failed. Raw:', content.slice(0, 1000));
-      return NextResponse.json(
-        { error: 'AI response was incomplete. Please try again.', retryable: true },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json(parsed);
   } catch (error: unknown) {
     clearTimeout(timeout);
 

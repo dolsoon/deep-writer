@@ -48,12 +48,11 @@ export function useChat(
       store.addAssistantMessage(data.reply, data.intent);
       store.setLoading(false);
 
-      // If edit intent, select all text and trigger generation pipeline.
-      // selectAll ensures promptRequest uses "selection" mode (creates diff)
-      // rather than "continuation" mode (inserts at cursor).
+      // If edit intent, trigger smart-edit pipeline.
+      // Smart-edit mode compares original vs edited document and creates diffs
+      // only for the parts that actually changed.
       if (data.intent === 'edit' && editor) {
-        editor.commands.selectAll();
-        await generation.promptRequest(editor, goal, text);
+        await generation.smartEditRequest(editor, goal, text);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong.';

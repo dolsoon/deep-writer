@@ -9,7 +9,7 @@ export interface ConstraintInfo {
   position: { from: number; to: number };
 }
 
-export type GenerateMode = 'regenerate' | 'selection' | 'continuation';
+export type GenerateMode = 'regenerate' | 'selection' | 'continuation' | 'smart-edit';
 
 export interface GenerateRequest {
   goal: string;
@@ -20,9 +20,15 @@ export interface GenerateRequest {
   mode: GenerateMode;
 }
 
-export interface GenerateResponse {
+export interface GapBasedResponse {
   gaps: Array<{ id: string; text: string }>;
 }
+
+export interface SmartEditResponse {
+  editedDocument: string;
+}
+
+export type GenerateResponse = GapBasedResponse | SmartEditResponse;
 
 export interface GenerateError {
   error: string;
