@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { Editor } from '@tiptap/react';
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { useLoadingStore } from '@/stores/useLoadingStore';
@@ -10,6 +11,7 @@ import { StartModeSelector } from '@/components/goal/StartModeSelector';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { SplitLayout } from '@/components/layout/SplitLayout';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { InspectPanel } from '@/components/inspect/InspectPanel';
 import { useChat } from '@/hooks/useChat';
 import {
   CoWriThinkEditor,
@@ -20,9 +22,12 @@ import { StorageWarning } from '@/components/shared/StorageWarning';
 import { DiffToolbar } from '@/components/editor/DiffToolbar';
 import { DiffSplitView } from '@/components/editor/DiffSplitView';
 import { useGeneration } from '@/hooks/useGeneration';
+import { useRoundAnalysis } from '@/hooks/useRoundAnalysis';
 import { useTheme } from '@/hooks/useTheme';
-import { applyAllDiffs } from '@/lib/diffCompute';
+import { applyAllDiffs, cleanStaleTextStateMarks } from '@/lib/diffCompute';
 import { updateDiffs } from '@/extensions/DiffDecorationPlugin';
+import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
+import { computeD3Base } from '@/lib/scoring';
 
 // --- Types ---
 
@@ -34,6 +39,14 @@ export default function Home() {
   const [appState, setAppState] = useState<AppState>('loading');
   const [goal, setGoal] = useState('');
   const editorHandleRef = useRef<CoWriThinkEditorHandle>(null);
+  const [readyEditor, setReadyEditor] = useState<Editor | null>(null);
+
+  const handleEditorReady = useCallback((ed: Editor) => {
+    setReadyEditor(ed);
+  }, []);
+
+  // LLM round analysis — enriches base heuristic scores with rubric-based evaluation
+  useRoundAnalysis(readyEditor);
 
   const session = useSessionStore((s) => s.session);
   const initSession = useSessionStore((s) => s.initSession);
@@ -112,14 +125,55 @@ export default function Home() {
     const modifiedEditor = modifiedEditorRef.current;
     if (!editor) return;
 
+    // Detect user edits in modified panel before transferring content.
+    // For each diff with a roundId, count how many characters still carry
+    // that roundId's ai-generated mark. If fewer than the original replacement
+    // text length, the user edited that round's text.
     if (modifiedEditor) {
+      const editedRoundIds = new Set<string>();
+      const markType = modifiedEditor.schema.marks.textState;
+
+      if (markType) {
+        // Count remaining ai-generated chars per roundId
+        const aiCharsByRound = new Map<string, number>();
+        modifiedEditor.state.doc.descendants((node) => {
+          if (!node.isText) return;
+          const tsm = node.marks.find((m) => m.type === markType);
+          const roundId = tsm?.attrs?.roundId as string | null;
+          if (roundId && tsm?.attrs?.state === 'ai-generated') {
+            aiCharsByRound.set(roundId, (aiCharsByRound.get(roundId) ?? 0) + (node.text?.length ?? 0));
+          }
+        });
+
+        // Compare against original replacement text lengths
+        for (const diff of pendingDiffs) {
+          if (!diff.roundId) continue;
+          const remaining = aiCharsByRound.get(diff.roundId) ?? 0;
+          if (remaining < diff.replacementText.length) {
+            editedRoundIds.add(diff.roundId);
+          }
+        }
+      }
+
       editor.commands.setContent(modifiedEditor.getJSON());
+
+      // Update D3 scores for rounds where user edited the AI text
+      const graphStore = useContributionGraphStore.getState();
+      for (const roundId of editedRoundIds) {
+        const node = graphStore.getNode(roundId);
+        if (node && node.metadata.action === 'accepted') {
+          graphStore.addNode(roundId, {
+            ...node.scores,
+            d3: computeD3Base('edited'),
+          }, { ...node.metadata, action: 'edited' });
+        }
+      }
     } else {
       applyAllDiffs(editor, pendingDiffs);
     }
 
-    // Clean up stale marks (marked-delete, original-removed) from accepted doc
-    editor.commands.unsetMark('textState');
+    // Clean up only stale marks (marked-delete, original-removed), preserving contribution tracking
+    cleanStaleTextStateMarks(editor);
 
     useEditorStore.getState().resolveAllDiffs('accept');
     updateDiffs(editor, []);
@@ -207,22 +261,14 @@ export default function Home() {
               <CoWriThinkEditor
                 ref={editorHandleRef}
                 initialContent={session?.documentState ?? ''}
+                onEditorReady={handleEditorReady}
               />
             </div>
           </div>
         }
         sidePanel={
           isInspectMode ? (
-            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              <div>
-                <svg className="mx-auto mb-3 h-10 w-10 text-gray-300 dark:text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-                <p className="font-medium text-gray-700 dark:text-gray-300">Inspect Mode</p>
-                <p className="mt-1">Contribution details panel coming soon.</p>
-              </div>
-            </div>
+            <InspectPanel editor={editorInstance} />
           ) : (
             <ChatPanel
               onSendMessage={sendMessage}

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { RoundMetadata, RoundType } from '@/types/contribution';
+import type { RoundMetadata, RoundType, EditTrace } from '@/types/contribution';
 import type { ProvenanceEvent } from '@/types/provenance';
 
 // --- Types ---
@@ -25,6 +25,10 @@ interface RoundActions {
   createRound: (params: CreateRoundParams) => RoundMetadata;
   getRound: (roundId: string) => RoundMetadata | undefined;
   getAncestryChain: (roundId: string) => RoundMetadata[];
+  appendEditTrace: (roundId: string, trace: EditTrace) => void;
+  extendLastEditTrace: (roundId: string, text: string) => void;
+  prependLastEditTraceOriginal: (roundId: string, text: string) => void;
+  appendLastEditTraceOriginal: (roundId: string, text: string) => void;
   nextRoundId: () => string;
   getAllRounds: () => RoundMetadata[];
   clearRounds: () => void;
@@ -54,6 +58,7 @@ export const useRoundStore = create<RoundStore>()((set, get) => ({
       generationMode: params.generationMode,
       diffActions: params.diffActions,
       events: params.events,
+      editTrace: [],
     };
     set((state) => {
       const rounds = new Map(state.rounds);
@@ -86,6 +91,33 @@ export const useRoundStore = create<RoundStore>()((set, get) => ({
     walk(roundId);
     result.sort((a, b) => a.roundNumber - b.roundNumber);
     return result;
+  },
+
+  appendEditTrace: (roundId: string, trace: EditTrace): void => {
+    const round = get().rounds.get(roundId);
+    if (!round) return;
+    round.editTrace.push(trace);
+  },
+
+  extendLastEditTrace: (roundId: string, text: string): void => {
+    const round = get().rounds.get(roundId);
+    if (!round || round.editTrace.length === 0) return;
+    const last = round.editTrace[round.editTrace.length - 1];
+    last.replacement += text;
+  },
+
+  prependLastEditTraceOriginal: (roundId: string, text: string): void => {
+    const round = get().rounds.get(roundId);
+    if (!round || round.editTrace.length === 0) return;
+    const last = round.editTrace[round.editTrace.length - 1];
+    last.original = text + last.original;
+  },
+
+  appendLastEditTraceOriginal: (roundId: string, text: string): void => {
+    const round = get().rounds.get(roundId);
+    if (!round || round.editTrace.length === 0) return;
+    const last = round.editTrace[round.editTrace.length - 1];
+    last.original += text;
   },
 
   nextRoundId: (): string => {

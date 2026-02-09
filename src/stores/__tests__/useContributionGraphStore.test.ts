@@ -190,15 +190,12 @@ describe('useContributionGraphStore', () => {
 
   // AC-GRAPH-005: Memoization
   describe('memoization', () => {
-    it('should populate the memo cache after computation', () => {
+    it('should return consistent values across calls', () => {
       const store = useContributionGraphStore.getState();
       store.addNode('r-1', scores(0, 0.3, 0), defaultMetadata());
 
-      useContributionGraphStore.getState().accumulatedScore('r-1', 'd2');
-
-      const cache = useContributionGraphStore.getState().memoCache;
-      expect(cache.size).toBeGreaterThan(0);
-      expect(cache.get('r-1:d2')).toBe(0.3);
+      const result = useContributionGraphStore.getState().accumulatedScore('r-1', 'd2');
+      expect(result).toBe(0.3);
     });
 
     it('should return the same value on second call', () => {
@@ -215,15 +212,15 @@ describe('useContributionGraphStore', () => {
       expect(first).toBe(second);
     });
 
-    it('should invalidate cache after updateNodeWithAnalysis', () => {
+    it('should reflect updated scores after updateNodeWithAnalysis', () => {
       const store = useContributionGraphStore.getState();
       store.addNode('r-1', scores(0, 0.3, 0), defaultMetadata());
 
-      // Compute and cache
-      useContributionGraphStore.getState().accumulatedScore('r-1', 'd2');
-      expect(useContributionGraphStore.getState().memoCache.size).toBeGreaterThan(0);
+      // Compute initial
+      const initial = useContributionGraphStore.getState().accumulatedScore('r-1', 'd2');
+      expect(initial).toBe(0.3);
 
-      // Update node - cache should be cleared
+      // Update node - cache should be invalidated internally
       store.updateNodeWithAnalysis('r-1', {
         roundId: 'r-1',
         scores: scores(0, 0.8, 0),
@@ -234,8 +231,6 @@ describe('useContributionGraphStore', () => {
         narrativeSummary: 'updated',
       });
 
-      expect(useContributionGraphStore.getState().memoCache.size).toBe(0);
-
       // Recompute - should use updated scores
       const newScore = useContributionGraphStore
         .getState()
@@ -243,17 +238,17 @@ describe('useContributionGraphStore', () => {
       expect(newScore).toBe(0.8);
     });
 
-    it('should invalidate cache after addNode', () => {
+    it('should reflect correct scores after addNode invalidates cache', () => {
       const store = useContributionGraphStore.getState();
       store.addNode('r-1', scores(0, 0.3, 0), defaultMetadata());
       useContributionGraphStore.getState().accumulatedScore('r-1', 'd2');
 
-      expect(useContributionGraphStore.getState().memoCache.size).toBeGreaterThan(0);
-
       // Adding a new node invalidates cache
       store.addNode('r-2', scores(0, 0.5, 0), defaultMetadata());
 
-      expect(useContributionGraphStore.getState().memoCache.size).toBe(0);
+      // Both values should be correct after cache invalidation
+      expect(useContributionGraphStore.getState().accumulatedScore('r-1', 'd2')).toBe(0.3);
+      expect(useContributionGraphStore.getState().accumulatedScore('r-2', 'd2')).toBe(0.5);
     });
   });
 
@@ -344,6 +339,66 @@ describe('useContributionGraphStore', () => {
     });
   });
 
+  // Inline-edit round type
+  describe('inline-edit round type', () => {
+    it('should accept inline-edit as a valid round type', () => {
+      const store = useContributionGraphStore.getState();
+      store.addNode('r-1', scores(1.0, 0.0, 0.7), defaultMetadata({ type: 'inline-edit', action: 'edited' }));
+
+      const node = store.getNode('r-1');
+      expect(node).toBeDefined();
+      expect(node!.metadata.type).toBe('inline-edit');
+    });
+
+    it('should inherit D2 score from parent AI round via edge', () => {
+      const store = useContributionGraphStore.getState();
+      // Parent AI generation round with concept score
+      store.addNode('r-1', scores(0.0, 0.0, 0.2), defaultMetadata({ type: 'generation' }));
+
+      // Inline-edit round: user changed wording, concept inherited from r-1
+      store.addNode('r-2', scores(1.0, 0.0, 0.7), defaultMetadata({ type: 'inline-edit', action: 'edited' }));
+
+      // Manually add D2 edge from r-2 to r-1 (as TextStateExtension does)
+      const node = store.getNode('r-2');
+      node!.edges.push({
+        to: 'r-1',
+        dimension: 'd2',
+        strength: 0.8,
+        reason: 'concept inherited from AI generation',
+      });
+
+      // D1: r-2 has no D1 edges, so it uses its own score (1.0)
+      expect(store.accumulatedScore('r-2', 'd1')).toBe(1.0);
+
+      // D2: r-2 inherits from r-1 via edge
+      // selfWeight = 1/(1+0.8) = 0.556, inheritWeight = 0.8/(1+0.8) = 0.444
+      // inherited = r-1's d2 (0.0) * 0.8 / 0.8 = 0.0
+      // result = 0.0 * 0.556 + 0.0 * 0.444 = 0.0
+      // In this case both are 0, but the edge exists for LLM analysis to update
+      expect(store.accumulatedScore('r-2', 'd2')).toBe(0);
+
+      // D3: r-2 has no D3 edges, so it uses its own score (0.7)
+      expect(store.accumulatedScore('r-2', 'd3')).toBe(0.7);
+    });
+
+    it('should inherit non-zero D2 from parent with AI concept contribution', () => {
+      const store = useContributionGraphStore.getState();
+      // Parent round updated by LLM analysis with concept score
+      store.addNode('r-1', scores(0.0, 0.6, 0.2), defaultMetadata({ type: 'generation' }));
+
+      // Inline-edit
+      store.addNode('r-2', scores(1.0, 0.0, 0.7), defaultMetadata({ type: 'inline-edit', action: 'edited' }));
+      const node = store.getNode('r-2');
+      node!.edges.push({ to: 'r-1', dimension: 'd2', strength: 0.8, reason: 'concept inherited' });
+
+      const d2 = store.accumulatedScore('r-2', 'd2');
+      // selfWeight = 1/1.8 ≈ 0.556, inheritWeight = 0.8/1.8 ≈ 0.444
+      // inherited = 0.6
+      // result = 0.0 * 0.556 + 0.6 * 0.444 ≈ 0.2667
+      expect(d2).toBeCloseTo(0.2667, 3);
+    });
+  });
+
   // clearGraph
   describe('clearGraph', () => {
     it('should reset nodes and memoCache', () => {
@@ -355,7 +410,6 @@ describe('useContributionGraphStore', () => {
 
       const state = useContributionGraphStore.getState();
       expect(state.nodes.size).toBe(0);
-      expect(state.memoCache.size).toBe(0);
       expect(state.getNode('r-1')).toBeUndefined();
     });
   });

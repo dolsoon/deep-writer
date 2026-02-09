@@ -13,8 +13,11 @@ import { computeCompositeScore } from '@/lib/scoring';
 
 interface ContributionGraphState {
   nodes: Map<string, RoundNode>;
-  memoCache: Map<string, number>;
 }
+
+// Non-reactive memo cache for accumulatedScore. Kept outside Zustand state
+// to avoid triggering re-renders when cache is populated during render.
+let _memoCache = new Map<string, number>();
 
 interface ContributionGraphActions {
   addNode: (
@@ -33,14 +36,13 @@ type ContributionGraphStore = ContributionGraphState & ContributionGraphActions;
 
 // --- Valid round types for validation ---
 
-const VALID_ROUND_TYPES = new Set(['generation', 'alternative']);
+const VALID_ROUND_TYPES = new Set(['generation', 'alternative', 'inline-edit']);
 
 // --- Store ---
 
 export const useContributionGraphStore = create<ContributionGraphStore>()(
   (set, get) => ({
     nodes: new Map(),
-    memoCache: new Map(),
 
     addNode: (
       roundId: string,
@@ -63,7 +65,8 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
 
       const nodes = new Map(get().nodes);
       nodes.set(roundId, node);
-      set({ nodes, memoCache: new Map() });
+      _memoCache = new Map();
+      set({ nodes });
     },
 
     updateNodeWithAnalysis: (roundId: string, analysis: RoundAnalysis) => {
@@ -88,7 +91,8 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
 
       const nodes = new Map(get().nodes);
       nodes.set(roundId, updated);
-      set({ nodes, memoCache: new Map() });
+      _memoCache = new Map();
+      set({ nodes });
     },
 
     getNode: (roundId: string): RoundNode | undefined => {
@@ -96,27 +100,30 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
     },
 
     accumulatedScore: (roundId: string, dimension: Dimension): number => {
-      const state = get();
       const cacheKey = `${roundId}:${dimension}`;
-      const cached = state.memoCache.get(cacheKey);
+      const cached = _memoCache.get(cacheKey);
       if (cached !== undefined) return cached;
 
-      const nodes = state.nodes;
-      const localMemo = new Map(state.memoCache);
+      const nodes = get().nodes;
+      const visiting = new Set<string>();
 
       function compute(rid: string, dim: Dimension): number {
         const key = `${rid}:${dim}`;
-        if (localMemo.has(key)) return localMemo.get(key)!;
+        if (_memoCache.has(key)) return _memoCache.get(key)!;
 
         const node = nodes.get(rid);
         if (!node) return 0;
+
+        // Cycle detection: if already visiting this node, use its own score
+        if (visiting.has(key)) return node.scores[dim];
+        visiting.add(key);
 
         const dimEdges: Edge[] = node.edges.filter(
           (e) => e.dimension === dim,
         );
 
         if (dimEdges.length === 0) {
-          localMemo.set(key, node.scores[dim]);
+          _memoCache.set(key, node.scores[dim]);
           return node.scores[dim];
         }
 
@@ -128,18 +135,17 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
           totalStrength += edge.strength;
         }
 
-        const inherited = weightedSum / totalStrength;
+        const inherited = totalStrength > 0 ? weightedSum / totalStrength : 0;
         const selfWeight = 1 / (1 + totalStrength);
         const inheritWeight = totalStrength / (1 + totalStrength);
         const result =
           node.scores[dim] * selfWeight + inherited * inheritWeight;
 
-        localMemo.set(key, result);
+        _memoCache.set(key, result);
         return result;
       }
 
       const result = compute(roundId, dimension);
-      set({ memoCache: localMemo });
       return result;
     },
 
@@ -152,7 +158,8 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
     },
 
     clearGraph: () => {
-      set({ nodes: new Map(), memoCache: new Map() });
+      _memoCache = new Map();
+      set({ nodes: new Map() });
     },
   }),
 );

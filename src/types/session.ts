@@ -1,6 +1,7 @@
 import type { JSONContent } from '@tiptap/react';
 import type { ProvenanceEvent } from './provenance';
 import type { SegmentScore } from './editor';
+import type { RoundMetadata, RoundNode } from './contribution';
 
 export interface Session {
   id: string;
@@ -11,6 +12,9 @@ export interface Session {
   relianceScores: SegmentScore[];
   createdAt: number;
   lastModifiedAt: number;
+  // SPEC-CONTRIB-003: Enhanced export fields
+  provenanceChain?: RoundMetadata[];
+  contributionGraph?: Record<string, RoundNode>;
 }
 
 export interface GoalChange {

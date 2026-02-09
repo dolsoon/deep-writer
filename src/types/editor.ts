@@ -22,6 +22,7 @@ export interface DiffEntry {
   replacementText: string;
   position: number; // ProseMirror document position
   state: 'pending' | 'accepted' | 'rejected' | 'restored';
+  roundId: string | null; // Links diff to its generation round for contribution tracking
 }
 
 // Valid state transitions map

@@ -1,12 +1,7 @@
 import { create } from 'zustand';
+import type { SelectedSegment } from '@/types/contribution';
 
 // --- Types ---
-
-interface SelectedSegment {
-  from: number;
-  to: number;
-  roundId: string | null;
-}
 
 interface InspectState {
   isInspectMode: boolean;

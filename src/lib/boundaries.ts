@@ -19,8 +19,8 @@ const SENTENCE_TERMINATORS = /[.?!]/;
  * Accounts for the fact that ProseMirror positions include node boundaries.
  */
 export function posToCharIndex(doc: ProseMirrorNode, pos: number): number {
-  // textBetween with pos gives us the text up to that position
-  const textBefore = doc.textBetween(0, Math.min(pos, doc.content.size), '', '\n');
+  // textBetween with '\n' blockSeparator so char indices match charIndexToPos
+  const textBefore = doc.textBetween(0, Math.min(pos, doc.content.size), '\n');
   return textBefore.length;
 }
 
@@ -68,7 +68,7 @@ export function charIndexToPos(doc: ProseMirrorNode, charIndex: number): number 
  * Words are delimited by whitespace. Attached punctuation is included.
  */
 export function getWordBoundary(doc: ProseMirrorNode, pos: number): TextRange {
-  const text = doc.textBetween(0, doc.content.size, '', '\n');
+  const text = doc.textBetween(0, doc.content.size, '\n');
   const charIndex = posToCharIndex(doc, pos);
 
   if (text.length === 0) {
@@ -108,7 +108,7 @@ export function getWordBoundary(doc: ProseMirrorNode, pos: number): TextRange {
  * Sentences are delimited by . ? ! followed by whitespace or end-of-document.
  */
 export function getSentenceBoundary(doc: ProseMirrorNode, pos: number): TextRange {
-  const text = doc.textBetween(0, doc.content.size, '', '\n');
+  const text = doc.textBetween(0, doc.content.size, '\n');
   const charIndex = posToCharIndex(doc, pos);
 
   if (text.length === 0) {
@@ -224,4 +224,35 @@ export function getPhraseBoundary(doc: ProseMirrorNode, pos: number): TextRange 
   }
 
   return sentenceRange; // fallback
+}
+
+/**
+ * Find paragraph boundaries at a ProseMirror position.
+ * A paragraph is the closest block-level ancestor containing the position.
+ */
+export function getParagraphBoundary(doc: ProseMirrorNode, pos: number): TextRange {
+  const $pos = doc.resolve(Math.min(pos, doc.content.size));
+  const depth = $pos.depth;
+  if (depth === 0) {
+    if (doc.childCount === 0) {
+      return { from: 0, to: doc.content.size };
+    }
+    let offset = 0;
+    let closestChild = doc.child(0);
+    let closestOffset = 0;
+    let closestDist = Math.abs(pos - 0);
+    for (let i = 0; i < doc.childCount; i++) {
+      const child = doc.child(i);
+      const childMid = offset + child.nodeSize / 2;
+      const dist = Math.abs(pos - childMid);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestChild = child;
+        closestOffset = offset;
+      }
+      offset += child.nodeSize;
+    }
+    return { from: closestOffset + 1, to: closestOffset + closestChild.nodeSize - 1 };
+  }
+  return { from: $pos.start(depth), to: $pos.end(depth) };
 }

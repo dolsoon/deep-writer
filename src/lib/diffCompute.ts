@@ -33,6 +33,7 @@ export function computeDiffViews(
   // Build modified document by applying all replacements via ProseMirror transaction
   const sorted = [...pendingDiffs].sort((a, b) => a.position - b.position);
   const { tr } = editorState;
+  const markType = editorState.schema.marks.textState;
 
   const modifiedHighlights: DiffHighlight[] = [];
 
@@ -40,6 +41,16 @@ export function computeDiffViews(
     const from = tr.mapping.map(diff.position);
     const to = tr.mapping.map(diff.position + diff.originalText.length);
     tr.insertText(diff.replacementText, from, to);
+
+    // Apply ai-generated mark with roundId so modified editor carries proper marks
+    if (markType && diff.roundId) {
+      tr.addMark(
+        from,
+        from + diff.replacementText.length,
+        markType.create({ state: 'ai-generated', roundId: diff.roundId }),
+      );
+    }
+
     modifiedHighlights.push({
       from,
       to: from + diff.replacementText.length,
@@ -72,15 +83,49 @@ export function applyAllDiffs(
     const to = tr.mapping.map(diff.position + diff.originalText.length);
     tr.insertText(diff.replacementText, from, to);
 
-    // Apply ai-generated mark to the replacement text
+    // Apply ai-generated mark with roundId to the replacement text
     if (markType) {
       tr.addMark(
         from,
         from + diff.replacementText.length,
-        markType.create({ state: 'ai-generated' }),
+        markType.create({ state: 'ai-generated', roundId: diff.roundId }),
       );
     }
   }
 
+  tr.setMeta('programmaticTextState', true);
   editor.view.dispatch(tr);
+}
+
+// --- Clean up stale marks after diff acceptance ---
+
+/**
+ * Remove only 'marked-delete' and 'original-removed' textState marks
+ * from the document. Preserves 'ai-generated', 'user-written',
+ * 'user-edited', and 'marked-preserve' marks for contribution tracking.
+ */
+export function cleanStaleTextStateMarks(editor: Editor): void {
+  const markType = editor.schema.marks.textState;
+  if (!markType) return;
+
+  const { tr } = editor.state;
+  let modified = false;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    const tsm = node.marks.find((m) => m.type === markType);
+    if (
+      tsm &&
+      (tsm.attrs.state === 'marked-delete' ||
+       tsm.attrs.state === 'original-removed')
+    ) {
+      tr.removeMark(pos, pos + node.nodeSize, tsm);
+      modified = true;
+    }
+  });
+
+  if (modified) {
+    tr.setMeta('programmaticTextState', true);
+    editor.view.dispatch(tr);
+  }
 }

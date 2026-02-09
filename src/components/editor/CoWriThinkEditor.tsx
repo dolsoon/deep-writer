@@ -20,11 +20,12 @@ import {
   refreshContributionScores,
 } from '@/extensions/ContributionDecorationPlugin';
 import type { ScoreAccessor } from '@/extensions/ContributionDecorationPlugin';
+import { InspectClickPlugin } from '@/extensions/InspectClickPlugin';
+import { DeletionMarkerPlugin } from '@/extensions/DeletionMarkerPlugin';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { MarkingExtension, clearMarkingSelection, expandMarkingSelection } from '@/extensions/MarkingExtension';
 import type { DragSelectionData, ConstraintData, ExpandLevel } from '@/extensions/MarkingExtension';
 import { AlternativesTooltip } from '@/components/editor/AlternativesTooltip';
-import { AddContextTooltip } from '@/components/editor/AddContextTooltip';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { useConstraintStore } from '@/stores/useConstraintStore';
 import { useLoadingStore } from '@/stores/useLoadingStore';
@@ -44,6 +45,7 @@ export interface CoWriThinkEditorHandle {
 interface CoWriThinkEditorProps {
   initialContent?: JSONContent | string;
   onUpdate?: (content: string) => void;
+  onEditorReady?: (editor: Editor) => void;
   className?: string;
 }
 
@@ -102,7 +104,7 @@ function collectRoundIds(editor: Editor, from: number, to: number): string[] {
 
 export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEditorProps>(
   function CoWriThinkEditor(
-    { initialContent = '', onUpdate, className = '' },
+    { initialContent = '', onUpdate, onEditorReady, className = '' },
     ref,
   ) {
     const isReadOnly = useEditorStore((s) => s.isReadOnly);
@@ -191,6 +193,8 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
         }),
         ConstraintDecorationPlugin,
         ContributionDecorationPlugin,
+        InspectClickPlugin,
+        DeletionMarkerPlugin,
         MarkingExtension.configure({
           onProvenanceEvent: handleProvenanceEvent,
           onDragSelection: handleDragSelection,
@@ -229,6 +233,13 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     useImperativeHandle(ref, () => ({
       getEditor: () => editor,
     }), [editor]);
+
+    // Notify parent when editor is ready
+    useEffect(() => {
+      if (editor && onEditorReady) {
+        onEditorReady(editor);
+      }
+    }, [editor, onEditorReady]);
 
     // Sync decoration state when activeDiffs change externally
     useEffect(() => {
@@ -272,15 +283,6 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
         />
         {tooltipData && editor && (
           <>
-            <AddContextTooltip
-              selectionRect={tooltipData.rect}
-              onAddContext={() => {
-                useConstraintStore.getState().addConstraint(
-                  'context', tooltipData.text, tooltipData.from, tooltipData.to,
-                );
-              }}
-              onDismiss={handleTooltipDismiss}
-            />
             <AlternativesTooltip
               selectionRect={tooltipData.rect}
               selectedText={tooltipData.text}
@@ -316,6 +318,8 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
                   constraints: [],
                   action: 'alt-selected',
                   type: 'alternative',
+                  previousText: tooltipData.text,
+                  resultText: alternative,
                 });
 
                 if (activeLevel === 'paragraph') {
@@ -324,6 +328,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
                     tooltipData.text,
                     alternative,
                     tooltipData.from,
+                    round.roundId,
                   );
                   const activeDiffs = useEditorStore.getState().getActiveDiffs();
                   updateDiffs(editor, activeDiffs);
@@ -340,6 +345,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
                       markType.create({ state: 'ai-generated', roundId: round.roundId }),
                     );
                   }
+                  tr.setMeta('programmaticTextState', true);
                   editor.view.dispatch(tr);
                   setTooltipData(null);
                 }

@@ -1,19 +1,21 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { EventType } from '@/types';
+import { useInspectStore } from '@/stores/useInspectStore';
 import {
   getWordBoundary,
   getPhraseBoundary,
   getSentenceBoundary,
+  getParagraphBoundary,
 } from '@/lib/boundaries';
 import type { TextRange } from '@/lib/boundaries';
 
 // --- Types ---
 
-export type SelectionLevel = 'word' | 'phrase' | 'sentence';
+export type SelectionLevel = 'word' | 'phrase' | 'sentence' | 'paragraph' | 'all';
 
 export interface DragSelectionData {
   from: number;
@@ -23,12 +25,20 @@ export interface DragSelectionData {
   rect: DOMRect;
 }
 
+export interface ConstraintData {
+  type: 'positive' | 'negative' | 'context';
+  text: string;
+  from: number;
+  to: number;
+}
+
 export interface MarkingExtensionOptions {
   onProvenanceEvent?: (
     type: EventType,
     data: Record<string, unknown>,
   ) => void;
   onDragSelection?: ((data: DragSelectionData) => void) | null;
+  onConstraintAdd?: ((data: ConstraintData) => void) | null;
 }
 
 interface MarkingPluginState {
@@ -41,11 +51,28 @@ interface MarkingPluginState {
 
 const markingPluginKey = new PluginKey('marking');
 
-const SELECTION_CLASSES: Record<SelectionLevel, string> = {
-  word: 'marking-selection-word',
-  phrase: 'marking-selection-phrase',
-  sentence: 'marking-selection-sentence',
-};
+const SELECTION_CLASS = 'marking-selection';
+
+export type ExpandLevel = 'word' | 'phrase' | 'sentence' | 'paragraph' | 'all';
+
+function getRangeForLevel(
+  level: SelectionLevel,
+  doc: ProseMirrorNode,
+  pos: number,
+): { from: number; to: number } {
+  switch (level) {
+    case 'word':
+      return getWordBoundary(doc, pos);
+    case 'phrase':
+      return getPhraseBoundary(doc, pos);
+    case 'sentence':
+      return getSentenceBoundary(doc, pos);
+    case 'paragraph':
+      return getParagraphBoundary(doc, pos);
+    case 'all':
+      return { from: 0, to: doc.content.size };
+  }
+}
 
 // --- Decoration Builder ---
 
@@ -60,7 +87,7 @@ function buildSelectionDecorations(
     if (from >= 0 && to <= doc.content.size && from < to) {
       decorations.push(
         Decoration.inline(from, to, {
-          class: SELECTION_CLASSES[state.selectionLevel],
+          class: SELECTION_CLASS,
         }),
       );
     }
@@ -95,11 +122,13 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
     return {
       onProvenanceEvent: undefined,
       onDragSelection: null,
+      onConstraintAdd: null,
     };
   },
 
   addProseMirrorPlugins() {
     const onDragSelection = this.options.onDragSelection ?? null;
+    const onConstraintAdd = this.options.onConstraintAdd ?? null;
 
     // Drag detection state (closure-scoped, not plugin state).
     // We measure the distance between mousedown and mouseup to distinguish
@@ -166,106 +195,76 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
             return pluginState?.decorations ?? DecorationSet.empty;
           },
 
-          handleClick(view, pos, event) {
+          handleClick(view, _pos, event) {
             // Ignore right-clicks
             if (event.button !== 0) return false;
 
-            // Don't handle if editor is not editable
-            if (!view.editable) return false;
+            // Single click: plain cursor, clear any marking decoration
+            const pluginState = markingPluginKey.getState(view.state) as MarkingPluginState;
+            if (pluginState?.selectedRange) {
+              view.dispatch(
+                view.state.tr.setMeta(markingPluginKey, getInitialState()),
+              );
+            }
 
-            // Skip if there's an active diff at this position
-            if (hasActiveDiffAtPos(view, pos)) return false;
-
-            // Don't intercept clicks on empty paragraphs or non-text areas
-            if (!hasTextAtPos(view.state.doc, pos)) return false;
-
-            const doc = view.state.doc;
-            const wordRange = getWordBoundary(doc, pos);
-
-            // Verify the word range actually contains text
-            const wordText = doc
-              .textBetween(wordRange.from, wordRange.to, '', '')
-              .trim();
-            if (!wordText) return false;
-
-            const newState: MarkingPluginState = {
-              selectionLevel: 'word',
-              selectedRange: wordRange,
-              decorations: DecorationSet.empty,
-            };
-            newState.decorations = buildSelectionDecorations(newState, doc);
-
-            view.dispatch(
-              view.state.tr.setMeta(markingPluginKey, newState),
-            );
-
-            // Return false to allow default cursor placement alongside marking
+            // Return false to allow default cursor placement
             return false;
           },
 
           handleDoubleClick(view, pos) {
+            if (useInspectStore.getState().isInspectMode) return false;
             if (!view.editable) return false;
-
-            // Skip if there's an active diff at this position
             if (hasActiveDiffAtPos(view, pos)) return false;
-
-            // Don't handle empty paragraphs or non-text areas
             if (!hasTextAtPos(view.state.doc, pos)) return false;
 
             const doc = view.state.doc;
-            const phraseRange = getPhraseBoundary(doc, pos);
 
-            // Verify the phrase range actually contains text
-            const phraseText = doc
-              .textBetween(phraseRange.from, phraseRange.to, '', '')
-              .trim();
-            if (!phraseText) return false;
+            // Double-click always selects word. Expansion to phrase/sentence/
+            // paragraph/all is handled via tooltip buttons.
+            const range = getWordBoundary(doc, pos);
 
+            const text = doc.textBetween(range.from, range.to, '', '').trim();
+            if (!text) return false;
+
+            // Select the range and apply decoration
+            const tr = view.state.tr.setSelection(
+              TextSelection.create(doc, range.from, range.to),
+            );
             const newState: MarkingPluginState = {
-              selectionLevel: 'phrase',
-              selectedRange: phraseRange,
+              selectionLevel: 'word',
+              selectedRange: range,
               decorations: DecorationSet.empty,
             };
             newState.decorations = buildSelectionDecorations(newState, doc);
+            tr.setMeta(markingPluginKey, newState);
+            view.dispatch(tr);
 
-            view.dispatch(
-              view.state.tr.setMeta(markingPluginKey, newState),
-            );
+            // Show the tooltip for the selection (same as drag does)
+            if (onDragSelection) {
+              // Defer slightly to let the browser update the selection rendering
+              setTimeout(() => {
+                if (!view.dom.isConnected) return;
+                const sel = window.getSelection();
+                if (!sel || sel.rangeCount === 0) return;
+                const rect = sel.getRangeAt(0).getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) return;
 
-            // Prevent browser default word selection
-            return true;
-          },
+                // Build surrounding context (~200 chars before and after)
+                const docSize = view.state.doc.content.size;
+                const contextStart = Math.max(0, range.from - 200);
+                const contextEnd = Math.min(docSize, range.to + 200);
+                const context = view.state.doc.textBetween(contextStart, contextEnd, ' ');
 
-          handleTripleClick(view, pos) {
-            if (!view.editable) return false;
+                onDragSelection({
+                  from: range.from,
+                  to: range.to,
+                  text,
+                  context,
+                  rect,
+                });
+              }, 0);
+            }
 
-            // Skip if there's an active diff at this position
-            if (hasActiveDiffAtPos(view, pos)) return false;
-
-            // Don't handle empty paragraphs or non-text areas
-            if (!hasTextAtPos(view.state.doc, pos)) return false;
-
-            const doc = view.state.doc;
-            const sentenceRange = getSentenceBoundary(doc, pos);
-
-            // Verify the sentence range actually contains text
-            const sentenceText = doc
-              .textBetween(sentenceRange.from, sentenceRange.to, '', '')
-              .trim();
-            if (!sentenceText) return false;
-
-            const newState: MarkingPluginState = {
-              selectionLevel: 'sentence',
-              selectedRange: sentenceRange,
-              decorations: DecorationSet.empty,
-            };
-            newState.decorations = buildSelectionDecorations(newState, doc);
-
-            view.dispatch(
-              view.state.tr.setMeta(markingPluginKey, newState),
-            );
-
-            // Prevent browser default paragraph selection
             return true;
           },
 
@@ -298,6 +297,11 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
             mouseup: (view: EditorView, event: Event) => {
               const e = event as MouseEvent;
 
+              if (useInspectStore.getState().isInspectMode) {
+                mouseDownCoords = null;
+                return false;
+              }
+
               if (!mouseDownCoords || !onDragSelection) {
                 mouseDownCoords = null;
                 return false;
@@ -319,10 +323,44 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
                 const { from, to } = view.state.selection;
                 if (from === to) return;
 
-                const text = view.state.doc.textBetween(from, to, ' ');
+                // Snap to word boundaries:
+                // If from is on whitespace, advance to the next word start
+                // so dragging from a space selects the next word, not the previous.
+                const doc = view.state.doc;
+                const docText = doc.textBetween(0, doc.content.size, '', '\n');
+                let adjustedFrom = from;
+                const fromCharIdx = docText.length > 0
+                  ? Math.min(doc.textBetween(0, Math.min(from, doc.content.size), '', '\n').length, docText.length - 1)
+                  : 0;
+                if (/\s/.test(docText[fromCharIdx] ?? '')) {
+                  // Skip whitespace forward to the next word
+                  let i = fromCharIdx;
+                  while (i < docText.length && /\s/.test(docText[i])) i++;
+                  if (i < docText.length) adjustedFrom = from + (i - fromCharIdx);
+                }
+
+                const startWord = getWordBoundary(doc, adjustedFrom);
+                const endWord = getWordBoundary(doc, to);
+                const snappedFrom = startWord.from;
+                const snappedTo = endWord.to;
+
+                const text = view.state.doc.textBetween(snappedFrom, snappedTo, ' ');
                 if (text.length < 2) return;
 
-                // Get the bounding rect of the browser selection
+                // Update the editor selection to match the snapped range
+                const tr = view.state.tr.setSelection(
+                  TextSelection.create(view.state.doc, snappedFrom, snappedTo),
+                );
+                // Set marking decoration so highlight persists when tooltip takes focus
+                const newPluginState: MarkingPluginState = {
+                  selectionLevel: 'word',
+                  selectedRange: { from: snappedFrom, to: snappedTo },
+                  decorations: DecorationSet.empty,
+                };
+                tr.setMeta(markingPluginKey, newPluginState);
+                view.dispatch(tr);
+
+                // Get the bounding rect of the updated browser selection
                 const sel = window.getSelection();
                 if (!sel || sel.rangeCount === 0) return;
                 const rect = sel.getRangeAt(0).getBoundingClientRect();
@@ -330,15 +368,15 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
 
                 // Build surrounding context (~200 chars before and after)
                 const docSize = view.state.doc.content.size;
-                const contextStart = Math.max(0, from - 200);
-                const contextEnd = Math.min(docSize, to + 200);
+                const contextStart = Math.max(0, snappedFrom - 200);
+                const contextEnd = Math.min(docSize, snappedTo + 200);
                 const context = view.state.doc.textBetween(
                   contextStart,
                   contextEnd,
                   ' ',
                 );
 
-                onDragSelection({ from, to, text, context, rect });
+                onDragSelection({ from: snappedFrom, to: snappedTo, text, context, rect });
               }, 0);
 
               return false;
@@ -376,4 +414,35 @@ export function clearMarkingSelection(view: EditorView): void {
       }),
     );
   }
+}
+
+// --- Helper: Expand selection to a different level ---
+
+export function expandMarkingSelection(
+  view: EditorView,
+  level: ExpandLevel,
+  anchorPos: number,
+  explicitRange?: { from: number; to: number },
+): { from: number; to: number; text: string } | null {
+  const doc = view.state.doc;
+  const range = explicitRange ?? getRangeForLevel(level, doc, anchorPos);
+  const text = doc.textBetween(range.from, range.to, ' ').trim();
+  if (!text) return null;
+
+  // Update editor selection
+  const tr = view.state.tr.setSelection(
+    TextSelection.create(doc, range.from, range.to),
+  );
+
+  // Set marking decoration
+  const newState: MarkingPluginState = {
+    selectionLevel: level,
+    selectedRange: range,
+    decorations: DecorationSet.empty,
+  };
+  newState.decorations = buildSelectionDecorations(newState, doc);
+  tr.setMeta(markingPluginKey, newState);
+  view.dispatch(tr);
+
+  return { from: range.from, to: range.to, text };
 }

@@ -185,3 +185,16 @@ dist-ssr/
 # ===========================================
 .env*.local
 coverage/
+
+
+archive/prep-meeting
+research
+
+# ===========================================
+# Project-specific exclusions
+# ===========================================
+.claude/
+.moai/
+paper/
+design/
+related-work/

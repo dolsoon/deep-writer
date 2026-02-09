@@ -124,11 +124,18 @@ export function useGeneration() {
         type: 'generation',
       });
       const d3 = computeD3Base('accepted');
+      const previousText = scan.gaps.map((g) => g.originalText).join('\n\n');
+      const resultText = response.gaps
+        .filter((gf) => scan.gaps.some((g) => g.id === gf.id))
+        .map((gf) => gf.text)
+        .join('\n\n');
       useContributionGraphStore.getState().addNode(round.roundId, { d1, d2, d3 }, {
         prompt: goal,
         constraints: constraintTypes,
         action: 'accepted',
         type: 'generation',
+        previousText,
+        resultText,
       });
 
       // Apply gap fills as diffs
@@ -139,6 +146,7 @@ export function useGeneration() {
             matchingGap.originalText,
             gapFill.text,
             matchingGap.position.from,
+            round.roundId,
           );
         }
       }
@@ -224,11 +232,17 @@ export function useGeneration() {
         type: 'generation',
       });
       const d3 = computeD3Base('accepted');
+      const previousText = mode === 'selection' && request.gaps[0]
+        ? request.gaps[0].originalText
+        : '';
+      const resultText = response.gaps[0]?.text ?? '';
       useContributionGraphStore.getState().addNode(round.roundId, { d1, d2, d3 }, {
         prompt: promptText,
         constraints: constraintTypes,
         action: 'accepted',
         type: 'generation',
+        previousText,
+        resultText,
       });
 
       if (mode === 'selection' && response.gaps.length > 0) {
@@ -239,6 +253,7 @@ export function useGeneration() {
           gap.originalText,
           gapFill.text,
           gap.position.from,
+          round.roundId,
         );
         const activeDiffs = useEditorStore.getState().getActiveDiffs();
         updateDiffs(editor, activeDiffs);
@@ -264,6 +279,7 @@ export function useGeneration() {
               markType.create({ state: 'ai-generated', roundId: round.roundId }),
             );
           }
+          tr.setMeta('programmaticTextState', true);
           editor.view.dispatch(tr);
         } else {
           // Multiple paragraphs - insert as structured content with proper <p> nodes

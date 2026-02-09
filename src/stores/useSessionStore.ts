@@ -9,6 +9,8 @@ import {
   loadSession,
   checkStorageUsage as storageCheckUsage,
 } from '@/lib/storage';
+import { useRoundStore } from '@/stores/useRoundStore';
+import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
 
 // --- Types ---
 
@@ -111,7 +113,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
   },
 
   getExportData: (): Session | null => {
-    return get().session;
+    const { session } = get();
+    if (!session) return null;
+
+    // SPEC-CONTRIB-003: Include provenance chain and contribution graph
+    const provenanceChain = useRoundStore.getState().getAllRounds();
+    const contributionGraph = Object.fromEntries(
+      useContributionGraphStore.getState().nodes.entries(),
+    );
+
+    return {
+      ...session,
+      provenanceChain,
+      contributionGraph,
+    };
   },
 
   loadFromStorage: (): boolean => {

@@ -14,7 +14,7 @@ interface EditorState {
 interface EditorActions {
   setTextState: (segmentId: string, state: TextState) => boolean;
   getTextState: (segmentId: string) => TextState | undefined;
-  addDiff: (originalText: string, replacementText: string, position: number) => string;
+  addDiff: (originalText: string, replacementText: string, position: number, roundId?: string | null) => string;
   resolveDiff: (diffId: string, action: 'accept' | 'reject' | 'restore') => DiffEntry | undefined;
   getActiveDiffs: () => DiffEntry[];
   resolveAllDiffs: (action: 'accept' | 'reject') => DiffEntry[];
@@ -54,7 +54,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     return get().textStates[segmentId];
   },
 
-  addDiff: (originalText: string, replacementText: string, position: number): string => {
+  addDiff: (originalText: string, replacementText: string, position: number, roundId?: string | null): string => {
     const id = nanoid();
     const diff: DiffEntry = {
       id,
@@ -62,6 +62,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       replacementText,
       position,
       state: 'pending',
+      roundId: roundId ?? null,
     };
 
     set((prev) => ({

@@ -1,9 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
-import { useAlternatives } from '@/hooks/useAlternatives';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useAlternatives, type Alternative, type AnnotationCues } from '@/hooks/useAlternatives';
+import { AnnotatableText, type WordAnnotation, type AnnotatableWord } from './AnnotatableText';
+import { tokenize } from '@/lib/wordDiff';
+import { computeWordDiff } from '@/lib/wordDiff';
+import type { ExpandLevel } from '@/extensions/MarkingExtension';
 
 // --- Types ---
+
+interface LevelCache {
+  alternatives: Alternative[];
+  originalAnnotations: Map<number, WordAnnotation>;
+  altAnnotations: Map<number, Map<number, WordAnnotation>>;
+}
 
 interface AlternativesTooltipProps {
   selectionRect: DOMRect;
@@ -12,7 +22,15 @@ interface AlternativesTooltipProps {
   goal: string;
   onReplace: (alternative: string) => void;
   onDismiss: () => void;
+  onExpandSelection: (level: ExpandLevel) => void;
+  activeLevel?: ExpandLevel | 'word';
 }
+
+const EXPAND_LEVELS: { level: ExpandLevel; label: string }[] = [
+  { level: 'word', label: 'Original' },
+  { level: 'sentence', label: 'Sentence' },
+  { level: 'paragraph', label: 'Paragraph' },
+];
 
 // --- Constants ---
 
@@ -28,7 +46,6 @@ function computePosition(
   const viewportHeight = window.innerHeight;
   const viewportWidth = window.innerWidth;
 
-  // Determine vertical placement: prefer below, flip above if near bottom
   const spaceBelow = viewportHeight - selectionRect.bottom;
   const placement = spaceBelow < 160 ? 'above' : 'below';
 
@@ -36,19 +53,95 @@ function computePosition(
   if (placement === 'below') {
     top = selectionRect.bottom + TOOLTIP_GAP;
   } else {
-    // Will be adjusted after render when we know tooltip height.
-    // Start with a reasonable offset above the selection.
     top = selectionRect.top - TOOLTIP_GAP;
   }
 
-  // Horizontal: center on selection, clamp to viewport
   let left = selectionRect.left + selectionRect.width / 2 - TOOLTIP_MAX_WIDTH / 2;
   left = Math.max(VIEWPORT_MARGIN, Math.min(left, viewportWidth - TOOLTIP_MAX_WIDTH - VIEWPORT_MARGIN));
-
-  // Clamp vertical within viewport
   top = Math.max(VIEWPORT_MARGIN, top);
 
   return { top, left, placement };
+}
+
+function wordsFromText(text: string): AnnotatableWord[] {
+  return tokenize(text).map((w) => ({ text: w }));
+}
+
+function wordsFromDiff(original: string, alternative: string): AnnotatableWord[] {
+  const segments = computeWordDiff(original, alternative);
+  const words: AnnotatableWord[] = [];
+  for (const seg of segments) {
+    if (seg.type === 'removed') continue; // skip -- only show alternative's own words
+    for (const w of seg.text.split(/\s+/).filter(Boolean)) {
+      words.push({ text: w, diffType: seg.type });
+    }
+  }
+  return words;
+}
+
+function getRemovedOriginalIndices(original: string, alternative: string): Set<number> {
+  const segments = computeWordDiff(original, alternative);
+  const removed = new Set<number>();
+  let origIdx = 0;
+
+  for (const seg of segments) {
+    const words = seg.text.split(/\s+/).filter(Boolean);
+    if (seg.type === 'removed') {
+      for (let i = 0; i < words.length; i++) {
+        removed.add(origIdx++);
+      }
+    } else if (seg.type === 'equal') {
+      origIdx += words.length;
+    }
+    // 'added' segments don't consume original indices
+  }
+
+  return removed;
+}
+
+function tagText(
+  words: string[],
+  annotations: Map<number, WordAnnotation>,
+  positiveTag: string,
+  negativeTag: string,
+): string | undefined {
+  if (annotations.size === 0) return undefined;
+  const parts: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const ann = annotations.get(i);
+    if (ann === 'positive') parts.push(`<${positiveTag}>${words[i]}</${positiveTag}>`);
+    else if (ann === 'negative') parts.push(`<${negativeTag}>${words[i]}</${negativeTag}>`);
+    else parts.push(words[i]);
+  }
+  return parts.join(' ');
+}
+
+function serializeAnnotations(
+  originalText: string,
+  originalAnns: Map<number, WordAnnotation>,
+  alternatives: Alternative[],
+  altAnns: Map<number, Map<number, WordAnnotation>>,
+): AnnotationCues {
+  const origWords = tokenize(originalText);
+  const originalFeedback = tagText(origWords, originalAnns, 'PRESERVE', 'AVOID');
+
+  const suggestionFeedbacks: string[] = [];
+  for (const [altIdx, wordAnns] of altAnns) {
+    const alt = alternatives[altIdx];
+    if (!alt || wordAnns.size === 0) continue;
+    const altWords = tokenize(alt.text);
+    const tagged = tagText(altWords, wordAnns, 'LIKE', 'DISLIKE');
+    if (tagged) suggestionFeedbacks.push(tagged);
+  }
+
+  return {
+    originalFeedback,
+    suggestionFeedbacks: suggestionFeedbacks.length > 0 ? suggestionFeedbacks : undefined,
+  };
+}
+
+function hasAnnotationCues(cues: AnnotationCues): boolean {
+  return !!cues.originalFeedback || (cues.suggestionFeedbacks?.length ?? 0) > 0;
 }
 
 // --- Component ---
@@ -60,14 +153,90 @@ export function AlternativesTooltip({
   goal,
   onReplace,
   onDismiss,
+  onExpandSelection,
+  activeLevel = 'word',
 }: AlternativesTooltipProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const promptInputRef = useRef<HTMLInputElement>(null);
+  const [promptValue, setPromptValue] = useState('');
   const { alternatives, isLoading, error, fetchAlternatives, reset } = useAlternatives();
 
-  // Fetch alternatives on mount
+  // Per-level cache: level -> { alternatives, annotations }
+  const cacheRef = useRef<Record<string, LevelCache>>({});
+  const [displayAlts, setDisplayAlts] = useState<Alternative[] | null>(null);
+  const fetchingLevelRef = useRef<string | null>(null);
+
+  // Annotation state
+  const [originalAnnotations, setOriginalAnnotations] = useState<Map<number, WordAnnotation>>(new Map());
+  const [altAnnotations, setAltAnnotations] = useState<Map<number, Map<number, WordAnnotation>>>(new Map());
+  const [hoveredAltIndex, setHoveredAltIndex] = useState<number | null>(null);
+
+  // Memoize original words
+  const originalWords = useMemo(() => wordsFromText(selectedText), [selectedText]);
+
+  // Auto-focus the prompt input on mount
   useEffect(() => {
-    fetchAlternatives(selectedText, context, goal);
-  }, [fetchAlternatives, selectedText, context, goal]);
+    promptInputRef.current?.focus();
+  }, []);
+
+  // When the hook returns new alternatives, cache them for the fetched level
+  useEffect(() => {
+    if (alternatives && alternatives.length > 0 && fetchingLevelRef.current) {
+      const level = fetchingLevelRef.current;
+      cacheRef.current[level] = {
+        alternatives,
+        originalAnnotations: new Map(),
+        altAnnotations: new Map(),
+      };
+      setDisplayAlts(alternatives);
+      setOriginalAnnotations(new Map());
+      setAltAnnotations(new Map());
+      fetchingLevelRef.current = null;
+    }
+  }, [alternatives]);
+
+  // On mount + when activeLevel changes: show cache or fetch
+  useEffect(() => {
+    const cached = cacheRef.current[activeLevel];
+    if (cached) {
+      setDisplayAlts(cached.alternatives);
+      setOriginalAnnotations(cached.originalAnnotations);
+      setAltAnnotations(cached.altAnnotations);
+    } else {
+      setDisplayAlts(null);
+      setOriginalAnnotations(new Map());
+      setAltAnnotations(new Map());
+      fetchingLevelRef.current = activeLevel;
+      const count = activeLevel === 'paragraph' ? 2 : undefined;
+      fetchAlternatives(selectedText, context, goal, count, activeLevel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLevel]);
+
+  // Persist annotation changes to cache
+  const handleOriginalAnnotationChange = useCallback(
+    (anns: Map<number, WordAnnotation>) => {
+      setOriginalAnnotations(anns);
+      if (cacheRef.current[activeLevel]) {
+        cacheRef.current[activeLevel].originalAnnotations = anns;
+      }
+    },
+    [activeLevel],
+  );
+
+  const handleAltAnnotationChange = useCallback(
+    (altIndex: number, anns: Map<number, WordAnnotation>) => {
+      setAltAnnotations((prev) => {
+        const next = new Map(prev);
+        next.set(altIndex, anns);
+        if (cacheRef.current[activeLevel]) {
+          cacheRef.current[activeLevel].altAnnotations = next;
+        }
+        return next;
+      });
+    },
+    [activeLevel],
+  );
 
   // Dismiss on Escape key
   useEffect(() => {
@@ -80,12 +249,14 @@ export function AlternativesTooltip({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onDismiss]);
 
-  // Dismiss on click outside
+  // Dismiss on click outside (but not on AddContextTooltip)
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
+      const target = e.target as HTMLElement;
       if (
         tooltipRef.current &&
-        !tooltipRef.current.contains(e.target as Node)
+        !tooltipRef.current.contains(target) &&
+        !target.closest('.add-context-tooltip')
       ) {
         onDismiss();
       }
@@ -107,18 +278,64 @@ export function AlternativesTooltip({
     }
   });
 
-  const handleItemClick = useCallback(
-    (alternative: string) => {
-      onReplace(alternative);
-      onDismiss();
+  const handleRetry = useCallback(() => {
+    const cues = serializeAnnotations(
+      selectedText,
+      originalAnnotations,
+      displayAlts ?? [],
+      altAnnotations,
+    );
+    delete cacheRef.current[activeLevel];
+    setDisplayAlts(null);
+    setOriginalAnnotations(new Map());
+    setAltAnnotations(new Map());
+    reset();
+    fetchingLevelRef.current = activeLevel;
+    const count = activeLevel === 'paragraph' ? 2 : undefined;
+    fetchAlternatives(
+      selectedText, context, goal, count, activeLevel,
+      hasAnnotationCues(cues) ? cues : undefined,
+    );
+  }, [reset, fetchAlternatives, selectedText, context, goal, activeLevel, originalAnnotations, altAnnotations, displayAlts]);
+
+  const handlePromptRefresh = useCallback(() => {
+    const trimmed = promptValue.trim();
+    if (!trimmed) return;
+
+    const cues = serializeAnnotations(
+      selectedText,
+      originalAnnotations,
+      displayAlts ?? [],
+      altAnnotations,
+    );
+    delete cacheRef.current[activeLevel];
+    setDisplayAlts(null);
+    setOriginalAnnotations(new Map());
+    setAltAnnotations(new Map());
+    reset();
+    fetchingLevelRef.current = activeLevel;
+    const count = activeLevel === 'paragraph' ? 2 : undefined;
+    fetchAlternatives(
+      selectedText, context, goal, count, activeLevel,
+      hasAnnotationCues(cues) ? cues : undefined,
+      trimmed,
+    );
+    setPromptValue('');
+  }, [promptValue, reset, fetchAlternatives, selectedText, context, goal, activeLevel, originalAnnotations, altAnnotations, displayAlts]);
+
+  const handlePromptKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handlePromptRefresh();
+      }
     },
-    [onReplace, onDismiss],
+    [handlePromptRefresh],
   );
 
-  const handleRetry = useCallback(() => {
-    reset();
-    fetchAlternatives(selectedText, context, goal);
-  }, [reset, fetchAlternatives, selectedText, context, goal]);
+  const handlePromptSend = useCallback(() => {
+    handlePromptRefresh();
+  }, [handlePromptRefresh]);
 
   const { top, left } = computePosition(selectionRect);
 
@@ -136,7 +353,74 @@ export function AlternativesTooltip({
       role="listbox"
       aria-label="Alternative phrasings"
     >
-      {isLoading && (
+      {/* Prompt input for direct AI instructions */}
+      <div
+        className="alternatives-tooltip-prompt"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={promptInputRef}
+          type="text"
+          className="alternatives-tooltip-prompt-input"
+          placeholder="Tell AI what to do..."
+          value={promptValue}
+          onChange={(e) => setPromptValue(e.target.value)}
+          onKeyDown={handlePromptKeyDown}
+        />
+        <button
+          type="button"
+          className="alternatives-tooltip-prompt-send"
+          onClick={handlePromptSend}
+          aria-label="Send prompt"
+          disabled={!promptValue.trim()}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Selection level expansion buttons */}
+      <div className="alternatives-tooltip-levels" onMouseDown={(e) => e.stopPropagation()}>
+        <span className="alternatives-tooltip-levels-label">Select:</span>
+        {EXPAND_LEVELS.map(({ level, label }) => (
+          <button
+            key={level}
+            type="button"
+            className={`alternatives-tooltip-level-btn${activeLevel === level ? ' alternatives-tooltip-level-btn-active' : ''}`}
+            onClick={() => onExpandSelection(level)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Original text with word-level annotations */}
+      <div className="alternatives-tooltip-original" onMouseDown={(e) => e.stopPropagation()}>
+        <span className="alternatives-tooltip-original-label">Original:</span>
+        <AnnotatableText
+          words={originalWords}
+          annotations={originalAnnotations}
+          onAnnotationChange={handleOriginalAnnotationChange}
+          highlights={
+            hoveredAltIndex != null && displayAlts?.[hoveredAltIndex]
+              ? getRemovedOriginalIndices(selectedText, displayAlts[hoveredAltIndex].text)
+              : undefined
+          }
+        />
+      </div>
+
+      {isLoading && !displayAlts && (
         <div className="alternatives-tooltip-loading">
           <div className="alternatives-tooltip-skeleton" />
           <div className="alternatives-tooltip-skeleton" />
@@ -144,7 +428,7 @@ export function AlternativesTooltip({
         </div>
       )}
 
-      {error && (
+      {error && !displayAlts && (
         <div className="alternatives-tooltip-error">
           <span>{error}</span>
           <button
@@ -157,20 +441,84 @@ export function AlternativesTooltip({
         </div>
       )}
 
-      {alternatives && alternatives.length > 0 && (
+      {displayAlts && displayAlts.length > 0 && (
         <div>
-          {alternatives.map((alt, index) => (
-            <button
+          {displayAlts.map((alt, index) => (
+            <div
               key={index}
               className="alternatives-tooltip-item"
-              onClick={() => handleItemClick(alt)}
+              onMouseEnter={() => setHoveredAltIndex(index)}
+              onMouseLeave={() => setHoveredAltIndex(null)}
               role="option"
               aria-selected={false}
-              type="button"
             >
-              {alt}
-            </button>
+              {activeLevel === 'paragraph' ? (
+                /* Paragraph: truncated preview + Compare button */
+                <button
+                  type="button"
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+                  onClick={() => {
+                    onReplace(alt.text);
+                    onDismiss();
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    {alt.label && (
+                      <span className="alternatives-tooltip-item-label">{alt.label}</span>
+                    )}
+                    <div style={{ fontSize: '13px', lineHeight: 1.5, color: 'inherit', opacity: 0.85 }}>
+                      {alt.text.length > 120 ? alt.text.slice(0, 120) + '...' : alt.text}
+                    </div>
+                  </div>
+                  <span
+                    className="alternatives-tooltip-apply-btn"
+                    style={{ marginTop: '2px' }}
+                  >
+                    Compare
+                  </span>
+                </button>
+              ) : (
+                /* Word/Sentence: full annotatable text + Apply button */
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                  <div style={{ flex: 1 }}>
+                    {alt.label && (
+                      <span className="alternatives-tooltip-item-label">{alt.label}</span>
+                    )}
+                    <div onMouseDown={(e) => e.stopPropagation()}>
+                      <AnnotatableText
+                        words={wordsFromDiff(selectedText, alt.text)}
+                        annotations={altAnnotations.get(index) ?? new Map()}
+                        onAnnotationChange={(anns) => handleAltAnnotationChange(index, anns)}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="alternatives-tooltip-apply-btn"
+                    onClick={() => {
+                      onReplace(alt.text);
+                      onDismiss();
+                    }}
+                    aria-label="Apply this alternative"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
+          <button
+            className="alternatives-tooltip-regenerate"
+            onClick={handleRetry}
+            type="button"
+            aria-label="Regenerate alternatives"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Regenerate
+          </button>
         </div>
       )}
     </div>

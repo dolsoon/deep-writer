@@ -74,7 +74,13 @@ function parseGenerateResponse(content: string, gapIds: string[]): GenerateRespo
 
   // Case 1: Standard format { "gaps": [{ "id": "...", "text": "..." }] }
   if (parsed.gaps && Array.isArray(parsed.gaps)) {
-    return parsed as unknown as GenerateResponse;
+    // Validate that each gap has id and text strings
+    const validGaps = (parsed.gaps as Array<Record<string, unknown>>).filter(
+      (g) => typeof g.id === 'string' && typeof g.text === 'string',
+    );
+    if (validGaps.length > 0) {
+      return { gaps: validGaps as Array<{ id: string; text: string }> };
+    }
   }
 
   // Case 2: Model returned { "text": "..." } or { "content": "..." } -- wrap into gaps format
@@ -100,6 +106,41 @@ function parseGenerateResponse(content: string, gapIds: string[]): GenerateRespo
     if (!parsed.gaps) {
       return { gaps: [{ id: gapIds[0], text: cleaned }] };
     }
+  }
+
+  return null;
+}
+
+/**
+ * Attempt to salvage text from a truncated JSON response (finish_reason: "length").
+ * The response typically looks like: { "gaps": [{ "id": "abc", "text": "some text that got cut
+ * We extract whatever text was generated before truncation.
+ */
+function repairTruncatedResponse(content: string, gapIds: string[]): GenerateResponse | null {
+  if (gapIds.length === 0) return null;
+
+  // Match all "id": "...", "text": "..." pairs, including the last partial one
+  const gapPattern = /"id"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/g;
+  const results: Array<{ id: string; text: string }> = [];
+  let match;
+
+  while ((match = gapPattern.exec(content)) !== null) {
+    const id = match[1];
+    let text = match[2];
+    // Unescape JSON string escapes
+    try {
+      text = JSON.parse(`"${text}"`);
+    } catch {
+      // If unescape fails, use raw text with basic cleanup
+      text = text.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    if (text.length > 0) {
+      results.push({ id, text });
+    }
+  }
+
+  if (results.length > 0) {
+    return { gaps: results };
   }
 
   return null;
@@ -159,7 +200,7 @@ export async function POST(request: NextRequest) {
   );
   const maxTokens = generateRequest.mode === 'continuation'
     ? 2048  // Continuation/first-draft needs more room
-    : Math.max(512, Math.min(4096, Math.ceil(totalGapChars * 3)));
+    : Math.max(1024, Math.min(4096, Math.ceil(totalGapChars * 3)));
 
   // Build prompt
   const userPrompt = buildUserPrompt(generateRequest);
@@ -203,11 +244,18 @@ export async function POST(request: NextRequest) {
 
     // Parse response
     const gapIds = generateRequest.gaps.map((g) => g.id);
-    const parsed = parseGenerateResponse(content, gapIds);
+    let parsed = parseGenerateResponse(content, gapIds);
+
+    // If standard parsing failed and response was truncated, try to salvage partial text
+    if (!parsed && finishReason === 'length') {
+      console.warn('[/api/generate] Response truncated (finish_reason: length). Attempting repair.');
+      parsed = repairTruncatedResponse(content, gapIds);
+    }
+
     if (!parsed) {
       console.error('[/api/generate] Parse failed. Raw:', content.slice(0, 1000));
       return NextResponse.json(
-        { error: `Could not parse AI response. Raw: ${content.slice(0, 200)}`, retryable: true },
+        { error: 'AI response was incomplete. Please try again.', retryable: true },
         { status: 502 },
       );
     }

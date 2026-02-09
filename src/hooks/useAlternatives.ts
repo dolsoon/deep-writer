@@ -2,18 +2,28 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 // --- Types ---
 
+export interface AnnotationCues {
+  originalFeedback?: string;       // original text with <PRESERVE>/<AVOID> tags
+  suggestionFeedbacks?: string[];  // suggestion texts with <LIKE>/<DISLIKE> tags
+}
+
+export interface Alternative {
+  text: string;
+  label: string;
+}
+
 interface UseAlternativesReturn {
-  alternatives: string[] | null;
+  alternatives: Alternative[] | null;
   isLoading: boolean;
   error: string | null;
-  fetchAlternatives: (selectedText: string, context: string, goal: string) => void;
+  fetchAlternatives: (selectedText: string, context: string, goal: string, count?: number, level?: string, annotations?: AnnotationCues, userInstruction?: string) => void;
   reset: () => void;
 }
 
 // --- Hook ---
 
 export function useAlternatives(): UseAlternativesReturn {
-  const [alternatives, setAlternatives] = useState<string[] | null>(null);
+  const [alternatives, setAlternatives] = useState<Alternative[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -26,7 +36,7 @@ export function useAlternatives(): UseAlternativesReturn {
   }, []);
 
   const fetchAlternatives = useCallback(
-    (selectedText: string, context: string, goal: string) => {
+    (selectedText: string, context: string, goal: string, count?: number, level?: string, annotations?: AnnotationCues, userInstruction?: string) => {
       // Abort previous in-flight request
       abortControllerRef.current?.abort();
 
@@ -40,7 +50,13 @@ export function useAlternatives(): UseAlternativesReturn {
       fetch('/api/alternatives', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selectedText, context, goal }),
+        body: JSON.stringify({
+          selectedText, context, goal,
+          ...(count != null && { count }),
+          ...(level && { level }),
+          ...(annotations && { annotations }),
+          ...(userInstruction && { userInstruction }),
+        }),
         signal: controller.signal,
       })
         .then(async (res) => {

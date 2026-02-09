@@ -135,6 +135,7 @@ describe('useEditorStore', () => {
         replacementText: 'new text',
         position: 42,
         state: 'pending',
+        roundId: null,
       });
     });
 
