@@ -55,14 +55,6 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
         );
       }
 
-      console.log(`[NODE-CREATE] 🔢 Round ${roundId} created with BASE scores:`, {
-        d1: baseScores.d1.toFixed(3),
-        d2: baseScores.d2.toFixed(3),
-        d3: baseScores.d3.toFixed(3),
-        type: metadata.type,
-        action: metadata.action
-      });
-
       const node: RoundNode = {
         roundId,
         scores: baseScores,
@@ -84,12 +76,6 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
           `Node "${roundId}" not found. Cannot update with analysis.`,
         );
       }
-
-      console.log(`[LLM-ANALYSIS] ✅ Round ${roundId} updated:`, {
-        before: { d1: existing.scores.d1.toFixed(3), d2: existing.scores.d2.toFixed(3), d3: existing.scores.d3.toFixed(3) },
-        after: { d1: analysis.scores.d1.toFixed(3), d2: analysis.scores.d2.toFixed(3), d3: analysis.scores.d3.toFixed(3) },
-        type: existing.metadata.type
-      });
 
       const updated: RoundNode = {
         ...existing,
@@ -127,10 +113,6 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
 
         const node = nodes.get(rid);
         if (!node) return 0;
-
-        // Log score source (base heuristic vs LLM-enhanced)
-        const scoreSource = node.narrative === null ? '🔢 BASE' : '🤖 LLM';
-        console.log(`[SCORE] ${scoreSource} | Round ${rid} | ${dim}: ${node.scores[dim].toFixed(3)} | Type: ${node.metadata.type}`);
 
         // Cycle detection: if already visiting this node, use its own score
         if (visiting.has(key)) return node.scores[dim];
