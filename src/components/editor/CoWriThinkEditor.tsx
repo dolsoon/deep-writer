@@ -227,6 +227,11 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
       ],
       content: initialContent,
       editable: !isReadOnly && !isGenerating,
+      editorProps: {
+        attributes: {
+          class: 'focus:outline-none min-h-[calc(100vh-250px)] h-full',
+        },
+      },
       onUpdate: ({ editor: ed }) => {
         // Persist document state to session store
         useSessionStore.getState().updateDocumentState(ed.getJSON());
@@ -315,7 +320,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
       >
         <EditorContent
           editor={editor}
-          className="prose prose-sm max-w-none dark:prose-invert focus:outline-none"
+          className="prose prose-sm max-w-none dark:prose-invert focus:outline-none h-full"
         />
         {selectionData && !tooltipData && (
           <AlternativesButton

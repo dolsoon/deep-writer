@@ -259,13 +259,15 @@ export default function Home() {
                 />
               </>
             ) : null}
-            <div className={`flex-1 overflow-y-auto bg-white px-8 py-6 dark:bg-gray-900 ${hasPendingDiffs ? 'hidden' : ''}`}>
-              {isGenerating && <SkeletonPlaceholder />}
-              <CoWriThinkEditor
-                ref={editorHandleRef}
-                initialContent={session?.documentState ?? ''}
-                onEditorReady={handleEditorReady}
-              />
+            <div className={`flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 dark:bg-gray-950 ${hasPendingDiffs ? 'hidden' : ''}`}>
+              <div className="mx-auto max-w-4xl min-h-full bg-white shadow-md border border-gray-200 dark:bg-gray-900 dark:border-gray-800 rounded-lg p-8 md:p-12">
+                {isGenerating && <SkeletonPlaceholder />}
+                <CoWriThinkEditor
+                  ref={editorHandleRef}
+                  initialContent={session?.documentState ?? ''}
+                  onEditorReady={handleEditorReady}
+                />
+              </div>
             </div>
           </div>
         }

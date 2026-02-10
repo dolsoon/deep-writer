@@ -74,6 +74,11 @@ function DiffPanel({ docJSON, highlights, highlightClass, label, editable = fals
       ],
       content: docJSON,
       editable,
+      editorProps: {
+        attributes: {
+          class: 'focus:outline-none min-h-full h-full',
+        },
+      },
     },
     [docJSON, highlights, highlightClass],
   );
@@ -99,7 +104,7 @@ function DiffPanel({ docJSON, highlights, highlightClass, label, editable = fals
       <div className="flex-1 overflow-y-auto px-6 py-4 text-gray-900 dark:text-gray-100">
         <EditorContent
           editor={editor}
-          className="max-w-none text-sm leading-relaxed focus:outline-none"
+          className="max-w-none text-sm leading-relaxed focus:outline-none h-full"
         />
       </div>
     </div>
