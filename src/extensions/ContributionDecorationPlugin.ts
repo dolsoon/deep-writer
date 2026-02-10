@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
 
 // --- Plugin Key ---
 
@@ -59,6 +60,18 @@ function buildContributionDecorations(
     } else if (!roundId) {
       level = 5;
     } else {
+      const roundNode = useContributionGraphStore.getState().getNode(roundId);
+      const isAlternative = roundNode?.metadata.type === 'alternative';
+
+      if (isAlternative) {
+        decorations.push(
+          Decoration.inline(pos, pos + node.nodeSize, {
+            class: 'contribution-alternative',
+          }),
+        );
+        return;
+      }
+
       const d1 = scoreAccessor(roundId, 'd1');
       const d2 = scoreAccessor(roundId, 'd2');
       const d3 = scoreAccessor(roundId, 'd3');

@@ -10,7 +10,7 @@ import { useInspectStore } from '@/stores/useInspectStore';
 
 const TEXT_STATE_CLASSES: Record<TextState, string> = {
   'user-written': '',
-  'ai-generated': '',
+  'ai-generated': 'text-ai-generated',
   'ai-pending': '',
   'user-edited': '',
   'marked-preserve': '',
