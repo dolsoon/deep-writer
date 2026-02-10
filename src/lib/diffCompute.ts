@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import type { EditorState } from '@tiptap/pm/state';
 import type { DiffEntry } from '@/types';
-import { diffChars } from 'diff';
+import { diffChars, diffWords } from 'diff';
 
 // --- Types ---
 
@@ -25,13 +25,6 @@ export function computeDiffViews(
 ): DiffViewData {
   const originalDocJSON = editorState.doc.toJSON() as Record<string, unknown>;
 
-  // Original highlights: positions of text that will be deleted
-  const originalHighlights: DiffHighlight[] = pendingDiffs.map((diff) => ({
-    from: diff.position,
-    to: diff.position + diff.originalText.length,
-  }));
-
-  // Build modified document by applying all replacements via ProseMirror transaction
   const sorted = [...pendingDiffs].sort((a, b) => a.position - b.position);
   const { tr } = editorState;
   // Mark this transaction as programmatic to prevent automatic mark fixing
@@ -39,6 +32,7 @@ export function computeDiffViews(
   tr.setMeta('previewOnly', true);
   const markType = editorState.schema.marks.textState;
 
+  const originalHighlights: DiffHighlight[] = [];
   const modifiedHighlights: DiffHighlight[] = [];
 
   for (const diff of sorted) {
@@ -50,6 +44,24 @@ export function computeDiffViews(
       continue; // Skip invalid diff
     }
 
+    // Compute word-level diff between original and replacement
+    const wordChanges = diffWords(diff.originalText, diff.replacementText);
+
+    // Original-side highlights: only mark removed words
+    let origOffset = 0;
+    for (const change of wordChanges) {
+      if (change.removed) {
+        originalHighlights.push({
+          from: diff.position + origOffset,
+          to: diff.position + origOffset + change.value.length,
+        });
+      }
+      if (!change.added) {
+        origOffset += change.value.length;
+      }
+    }
+
+    // Apply replacement to build modified document
     tr.insertText(diff.replacementText, from, to);
 
     // Apply ai-generated mark with roundId so modified editor carries proper marks
@@ -61,10 +73,19 @@ export function computeDiffViews(
       );
     }
 
-    modifiedHighlights.push({
-      from,
-      to: from + diff.replacementText.length,
-    });
+    // Modified-side highlights: only mark added words
+    let modOffset = 0;
+    for (const change of wordChanges) {
+      if (change.added) {
+        modifiedHighlights.push({
+          from: from + modOffset,
+          to: from + modOffset + change.value.length,
+        });
+      }
+      if (!change.removed) {
+        modOffset += change.value.length;
+      }
+    }
   }
 
   const modifiedState = editorState.apply(tr);
