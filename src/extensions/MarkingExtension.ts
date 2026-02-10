@@ -185,7 +185,110 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
           },
         },
 
+        view(editorView) {
+          const handleGlobalMouseUp = (e: MouseEvent) => {
+            if (!mouseDownCoords || !onDragSelection) {
+              mouseDownCoords = null;
+              return;
+            }
+
+            const dx = e.clientX - mouseDownCoords.x;
+            const dy = e.clientY - mouseDownCoords.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            mouseDownCoords = null;
+
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+
+            // Mouse barely moved — this is a click, not a drag
+            if (distance < MIN_DRAG_DISTANCE) return;
+            if (!editorView.editable) return;
+
+            // Defer to let ProseMirror sync the selection after the drag
+            setTimeout(() => {
+              if (!editorView.dom.isConnected) return;
+
+              const { from, to } = editorView.state.selection;
+              if (from === to) return;
+
+              // Snap to word boundaries:
+              const doc = editorView.state.doc;
+              const docText = doc.textBetween(0, doc.content.size, '', '\n');
+              let adjustedFrom = from;
+              const fromCharIdx = docText.length > 0
+                ? Math.min(doc.textBetween(0, Math.min(from, doc.content.size), '', '\n').length, docText.length - 1)
+                : 0;
+              if (/\s/.test(docText[fromCharIdx] ?? '')) {
+                // Skip whitespace forward to the next word
+                let i = fromCharIdx;
+                while (i < docText.length && /\s/.test(docText[i])) i++;
+                if (i < docText.length) adjustedFrom = from + (i - fromCharIdx);
+              }
+
+              const startWord = getWordBoundary(doc, adjustedFrom);
+              const endWord = getWordBoundary(doc, to);
+              const snappedFrom = startWord.from;
+              const snappedTo = endWord.to;
+
+              const text = editorView.state.doc.textBetween(snappedFrom, snappedTo, ' ');
+              if (text.length < 2) return;
+
+              // Update the editor selection to match the snapped range
+              const tr = editorView.state.tr.setSelection(
+                TextSelection.create(editorView.state.doc, snappedFrom, snappedTo),
+              );
+              // Set marking decoration so highlight persists when tooltip takes focus
+              const newPluginState: MarkingPluginState = {
+                selectionLevel: 'word',
+                selectedRange: { from: snappedFrom, to: snappedTo },
+                decorations: DecorationSet.empty,
+              };
+              tr.setMeta(markingPluginKey, newPluginState);
+              editorView.dispatch(tr);
+
+              // Get the bounding rect of the updated browser selection
+              const sel = window.getSelection();
+              if (!sel || sel.rangeCount === 0) return;
+              const rect = sel.getRangeAt(0).getBoundingClientRect();
+              if (rect.width === 0 && rect.height === 0) return;
+
+              // Build surrounding context (~200 chars before and after)
+              const docSize = editorView.state.doc.content.size;
+              const contextStart = Math.max(0, snappedFrom - 200);
+              const contextEnd = Math.min(docSize, snappedTo + 200);
+              const context = editorView.state.doc.textBetween(
+                contextStart,
+                contextEnd,
+                ' ',
+              );
+
+              onDragSelection({ from: snappedFrom, to: snappedTo, text, context, rect });
+            }, 0);
+          };
+
+          // Attach handler to view so mousedown can access it
+          (editorView as any)._handleGlobalMouseUp = handleGlobalMouseUp;
+
+          return {
+            update: () => {},
+            destroy: () => {
+              window.removeEventListener('mouseup', handleGlobalMouseUp);
+            }
+          };
+        },
+
         props: {
+          handleDOMEvents: {
+            mousedown: (view: EditorView, event: Event) => {
+              const e = event as MouseEvent;
+              mouseDownCoords = { x: e.clientX, y: e.clientY };
+              const handler = (view as any)._handleGlobalMouseUp;
+              if (handler) {
+                window.addEventListener('mouseup', handler);
+              }
+              return false;
+            },
+          },
+
           decorations(state) {
             const pluginState = markingPluginKey.getState(state) as
               | MarkingPluginState
@@ -283,99 +386,6 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
             }
 
             return false;
-          },
-
-          handleDOMEvents: {
-            mousedown: (_view: EditorView, event: Event) => {
-              const e = event as MouseEvent;
-              mouseDownCoords = { x: e.clientX, y: e.clientY };
-              return false;
-            },
-
-            mouseup: (view: EditorView, event: Event) => {
-              const e = event as MouseEvent;
-
-              // Alternative generation now works in all modes (removed isInspectMode check)
-
-              if (!mouseDownCoords || !onDragSelection) {
-                mouseDownCoords = null;
-                return false;
-              }
-
-              const dx = e.clientX - mouseDownCoords.x;
-              const dy = e.clientY - mouseDownCoords.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-              mouseDownCoords = null;
-
-              // Mouse barely moved — this is a click, not a drag
-              if (distance < MIN_DRAG_DISTANCE) return false;
-              if (!view.editable) return false;
-
-              // Defer to let ProseMirror sync the selection after the drag
-              setTimeout(() => {
-                if (!view.dom.isConnected) return;
-
-                const { from, to } = view.state.selection;
-                if (from === to) return;
-
-                // Snap to word boundaries:
-                // If from is on whitespace, advance to the next word start
-                // so dragging from a space selects the next word, not the previous.
-                const doc = view.state.doc;
-                const docText = doc.textBetween(0, doc.content.size, '', '\n');
-                let adjustedFrom = from;
-                const fromCharIdx = docText.length > 0
-                  ? Math.min(doc.textBetween(0, Math.min(from, doc.content.size), '', '\n').length, docText.length - 1)
-                  : 0;
-                if (/\s/.test(docText[fromCharIdx] ?? '')) {
-                  // Skip whitespace forward to the next word
-                  let i = fromCharIdx;
-                  while (i < docText.length && /\s/.test(docText[i])) i++;
-                  if (i < docText.length) adjustedFrom = from + (i - fromCharIdx);
-                }
-
-                const startWord = getWordBoundary(doc, adjustedFrom);
-                const endWord = getWordBoundary(doc, to);
-                const snappedFrom = startWord.from;
-                const snappedTo = endWord.to;
-
-                const text = view.state.doc.textBetween(snappedFrom, snappedTo, ' ');
-                if (text.length < 2) return;
-
-                // Update the editor selection to match the snapped range
-                const tr = view.state.tr.setSelection(
-                  TextSelection.create(view.state.doc, snappedFrom, snappedTo),
-                );
-                // Set marking decoration so highlight persists when tooltip takes focus
-                const newPluginState: MarkingPluginState = {
-                  selectionLevel: 'word',
-                  selectedRange: { from: snappedFrom, to: snappedTo },
-                  decorations: DecorationSet.empty,
-                };
-                tr.setMeta(markingPluginKey, newPluginState);
-                view.dispatch(tr);
-
-                // Get the bounding rect of the updated browser selection
-                const sel = window.getSelection();
-                if (!sel || sel.rangeCount === 0) return;
-                const rect = sel.getRangeAt(0).getBoundingClientRect();
-                if (rect.width === 0 && rect.height === 0) return;
-
-                // Build surrounding context (~200 chars before and after)
-                const docSize = view.state.doc.content.size;
-                const contextStart = Math.max(0, snappedFrom - 200);
-                const contextEnd = Math.min(docSize, snappedTo + 200);
-                const context = view.state.doc.textBetween(
-                  contextStart,
-                  contextEnd,
-                  ' ',
-                );
-
-                onDragSelection({ from: snappedFrom, to: snappedTo, text, context, rect });
-              }, 0);
-
-              return false;
-            },
           },
         },
       }),
