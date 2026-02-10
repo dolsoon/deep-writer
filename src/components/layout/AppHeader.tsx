@@ -3,6 +3,7 @@
 import { GoalDisplay } from '@/components/goal/GoalDisplay';
 import { ExportButton } from '@/components/shared/ExportButton';
 import { useInspectStore } from '@/stores/useInspectStore';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 
 // --- Types ---
 
@@ -12,15 +13,17 @@ interface AppHeaderProps {
   onGoalEdit?: () => void;
   onNewSession?: () => void;
   onToggleTheme?: () => void;
+  onOpenSettings?: () => void;
 }
 
 // --- Component ---
 
-export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme }: AppHeaderProps) {
+export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme, onOpenSettings }: AppHeaderProps) {
   const isInspectMode = useInspectStore((s) => s.isInspectMode);
   const toggleInspectMode = useInspectStore((s) => s.toggleInspectMode);
   const isHighlightMode = useInspectStore((s) => s.isHighlightMode);
   const toggleHighlightMode = useInspectStore((s) => s.toggleHighlightMode);
+  const hasApiKey = useSettingsStore((s) => s.openaiApiKey.length > 0);
 
   return (
     <header className="flex h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900">
@@ -75,6 +78,22 @@ export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </button>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="relative rounded-lg border border-gray-300 p-1.5 text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              title="Settings"
+              aria-label="Open settings"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              {hasApiKey && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-green-500" />
+              )}
+            </button>
+          )}
           {onToggleTheme && (
             <button
               onClick={onToggleTheme}

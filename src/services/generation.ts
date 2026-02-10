@@ -9,6 +9,7 @@ import type {
   GenerateMode,
 } from '@/types/generation';
 import type { TextState } from '@/types';
+import { getApiHeaders } from '@/lib/apiHeaders';
 
 // --- Types ---
 
@@ -160,7 +161,7 @@ export async function callGenerateAPI(
 ): Promise<GenerateResponse> {
   const response = await fetch('/api/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getApiHeaders(),
     body: JSON.stringify(request),
   });
 

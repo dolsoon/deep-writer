@@ -88,7 +88,7 @@ function parseChatResponse(content: string): ChatResponse | null {
 // --- Route Handler ---
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = request.headers.get('x-openai-api-key') || process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: 'OpenAI API key not configured.', retryable: false },

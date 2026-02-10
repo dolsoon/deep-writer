@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/useChatStore';
 import { useConstraintStore } from '@/stores/useConstraintStore';
 import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
 import type { RoundAnalysisRequest, RoundAnalysis } from '@/types/contribution';
+import { getApiHeaders } from '@/lib/apiHeaders';
 
 // --- Constants ---
 
@@ -114,7 +115,7 @@ export function useRoundAnalysis(): void {
           try {
             const res = await fetch('/api/analyze-round', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getApiHeaders(),
               body: JSON.stringify(payload),
             });
 

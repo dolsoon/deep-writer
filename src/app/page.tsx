@@ -8,7 +8,9 @@ import { useLoadingStore } from '@/stores/useLoadingStore';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { GoalModal } from '@/components/goal/GoalModal';
 import { StartModeSelector } from '@/components/goal/StartModeSelector';
+import { SettingsModal } from '@/components/settings/SettingsModal';
 import { AppHeader } from '@/components/layout/AppHeader';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 import { SplitLayout } from '@/components/layout/SplitLayout';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { InspectPanel } from '@/components/inspect/InspectPanel';
@@ -38,6 +40,7 @@ type AppState = 'loading' | 'goal-prompt' | 'mode-select' | 'editor';
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('loading');
   const [goal, setGoal] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
   const editorHandleRef = useRef<CoWriThinkEditorHandle>(null);
   const [readyEditor, setReadyEditor] = useState<Editor | null>(null);
 
@@ -70,6 +73,14 @@ export default function Home() {
       setAppState('goal-prompt');
     }
   }, [loadFromStorage]);
+
+  // Auto-open settings modal if no API key is configured
+  useEffect(() => {
+    const apiKey = useSettingsStore.getState().openaiApiKey;
+    if (!apiKey) {
+      setShowSettings(true);
+    }
+  }, []);
 
   // Goal submission handler
   const handleGoalSubmit = useCallback((submittedGoal: string) => {
@@ -227,7 +238,8 @@ export default function Home() {
   // Editor state
   return (
     <div className="flex h-screen flex-col">
-      <AppHeader goal={session?.goal} theme={theme} onGoalEdit={handleGoalEdit} onNewSession={handleNewSession} onToggleTheme={toggleTheme} />
+      <AppHeader goal={session?.goal} theme={theme} onGoalEdit={handleGoalEdit} onNewSession={handleNewSession} onToggleTheme={toggleTheme} onOpenSettings={() => setShowSettings(true)} />
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {generation.error && (
         <div className="flex items-center justify-between bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
           <span>{generation.error}</span>

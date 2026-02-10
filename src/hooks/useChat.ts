@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { RefObject } from 'react';
 import { useChatStore } from '@/stores/useChatStore';
 import { useGeneration } from '@/hooks/useGeneration';
+import { getApiHeaders } from '@/lib/apiHeaders';
 import type { CoWriThinkEditorHandle } from '@/components/editor/CoWriThinkEditor';
 
 // --- Hook ---
@@ -31,7 +32,7 @@ export function useChat(
       // Call /api/chat for intent classification + response
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(),
         body: JSON.stringify({ messages, document, goal }),
       });
 

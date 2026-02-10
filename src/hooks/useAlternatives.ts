@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { getApiHeaders } from '@/lib/apiHeaders';
 
 // --- Types ---
 
@@ -49,7 +50,7 @@ export function useAlternatives(): UseAlternativesReturn {
 
       fetch('/api/alternatives', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getApiHeaders(),
         body: JSON.stringify({
           selectedText, context, goal,
           ...(count != null && { count }),
