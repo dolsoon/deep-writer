@@ -2,7 +2,7 @@ import type { TextState } from '@/types/editor';
 import type { RoundType, ContributionLevel } from '@/types/contribution';
 
 /**
- * Compute D1 (Authorship) base score from mark state.
+ * Compute D1 (Wording) base score from mark state.
  *
  * | Mark State    | Round Type                         | D1 Score |
  * |---------------|------------------------------------|----------|

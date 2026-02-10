@@ -8,7 +8,7 @@ import {
 } from '@/lib/scoring';
 
 describe('scoring', () => {
-  // ─── AC-SCORE-001: D1 Authorship ───────────────────────────────────
+  // ─── AC-SCORE-001: D1 Wording ──────────────────────────────────────
 
   describe('computeD1Base', () => {
     it('returns 1.0 for user-written text', () => {
