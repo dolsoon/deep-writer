@@ -4,7 +4,6 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { EventType } from '@/types';
-import { useInspectStore } from '@/stores/useInspectStore';
 import {
   getWordBoundary,
   getPhraseBoundary,

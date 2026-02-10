@@ -19,6 +19,7 @@ import {
   GenerationError,
 } from '@/services/generation';
 import type { GapBasedResponse, SmartEditResponse } from '@/types/generation';
+import { computeSmartEditDiffs } from '@/lib/diffCompute';
 
 // --- Types ---
 
@@ -106,7 +107,6 @@ export function useGeneration() {
       const constraintTypes = [...new Set(constraintState.constraints.map(c => c.type))];
 
       // Create round
-      console.log('[DEBUG] 라운드 생성 전...');
       const round = useRoundStore.getState().createRound({
         type: 'generation',
         parentRounds: parentRoundIds,
@@ -117,11 +117,6 @@ export function useGeneration() {
         generationMode: 'regenerate',
         diffActions: { accepted: 0, rejected: 0, edited: 0 },
         events: [],
-      });
-      console.log('[DEBUG] 라운드 생성 완료:', {
-        roundId: round.roundId,
-        hasRoundId: !!round.roundId,
-        type: typeof round.roundId
       });
 
       // Create graph node with base scores
@@ -286,21 +281,6 @@ export function useGeneration() {
               cursorPos + text.length,
               markType.create({ state: 'ai-generated', roundId: round.roundId }),
             );
-            console.log('[DEBUG] 마크 생성 속성:', {
-              state: 'ai-generated',
-              roundId: round.roundId,
-              roundIdType: typeof round.roundId,
-              roundIdNull: round.roundId === null,
-              roundIdUndefined: round.roundId === undefined
-            });
-            console.log('[DEBUG] 마크 적용 완료:', {
-              roundId: round.roundId,
-              from: cursorPos,
-              to: cursorPos + text.length,
-              textLength: text.length
-            });
-          } else {
-            console.error('[DEBUG] ❌ textState markType을 찾을 수 없습니다!');
           }
           tr.setMeta('programmaticTextState', true);
           editor.view.dispatch(tr);
@@ -314,45 +294,9 @@ export function useGeneration() {
               marks: [{ type: 'textState', attrs: { state: 'ai-generated', roundId: round.roundId } }],
             }],
           }));
-          console.log('[DEBUG] 다중 문단 삽입:', {
-            roundId: round.roundId,
-            paragraphCount: paragraphs.length,
-            totalChars: paragraphs.join('').length
-          });
           editor.chain().setMeta('programmaticTextState', true).insertContentAt(cursorPos, content).run();
         }
 
-        // Verify marks were applied
-        setTimeout(() => {
-          let foundMarks = 0;
-          let foundRoundId = false;
-          const markSamples: any[] = [];
-          editor.state.doc.descendants((node, pos) => {
-            if (node.isText) {
-              const textStateMark = node.marks.find(m => m.type.name === 'textState');
-              if (textStateMark) {
-                foundMarks++;
-                if (markSamples.length < 3) {
-                  markSamples.push({
-                    pos,
-                    text: node.text?.slice(0, 30),
-                    state: textStateMark.attrs.state,
-                    roundId: textStateMark.attrs.roundId,
-                  });
-                }
-                if (textStateMark.attrs.roundId === round.roundId) {
-                  foundRoundId = true;
-                }
-              }
-            }
-          });
-          console.log('[DEBUG] 마크 검증:', {
-            expectedRoundId: round.roundId,
-            foundMarks,
-            foundRoundId: foundRoundId ? '✅' : '❌',
-            markSamples
-          });
-        }, 100);
       }
 
       // Log response provenance
@@ -448,23 +392,38 @@ export function useGeneration() {
         resultText: response.editedDocument,
       });
 
-      // 6. Apply as single diff for entire document
-      // This is simpler and more reliable than complex position mapping
-      useEditorStore.getState().addDiff(
-        originalText,
-        response.editedDocument,
-        0,
-        round.roundId,
-      );
+      // 6. Compute individual diffs for changed parts only
+      const smartDiffs = computeSmartEditDiffs(editor, originalText, response.editedDocument);
 
-      // 7. Update diff UI
+      if (smartDiffs.length > 0) {
+        // Apply each changed part as a separate diff
+        for (const diff of smartDiffs) {
+          useEditorStore.getState().addDiff(
+            diff.originalText,
+            diff.replacementText,
+            diff.position,
+            round.roundId,
+          );
+        }
+      } else {
+        // Fallback: entire document as single diff (position 1 = first text position)
+        console.warn('[FALLBACK] Using entire document as single diff');
+        useEditorStore.getState().addDiff(
+          originalText,
+          response.editedDocument,
+          1,
+          round.roundId,
+        );
+      }
+
+      // 8. Update diff UI
       const activeDiffs = useEditorStore.getState().getActiveDiffs();
       updateDiffs(editor, activeDiffs);
 
       // Log response provenance
       logProvenance('ai-generation-received', {
         mode: 'smart-edit',
-        changeCount: textChanges.length,
+        changeCount: smartDiffs.length || 1,
         userRequest: promptText,
       });
 

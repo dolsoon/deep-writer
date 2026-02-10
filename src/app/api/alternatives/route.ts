@@ -292,9 +292,6 @@ export async function POST(request: NextRequest) {
     const content = message?.content;
     const finishReason = completion.choices[0]?.finish_reason;
 
-    console.log('[/api/alternatives] finish_reason:', finishReason);
-    console.log('[/api/alternatives] raw content:', content?.slice(0, 500));
-
     if (!content) {
       console.error('[/api/alternatives] Empty content. refusal:', message?.refusal);
       return NextResponse.json(

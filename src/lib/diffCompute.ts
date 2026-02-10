@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import type { EditorState } from '@tiptap/pm/state';
 import type { DiffEntry } from '@/types';
+import { diffChars } from 'diff';
 
 // --- Types ---
 
@@ -40,37 +41,24 @@ export function computeDiffViews(
 
   const modifiedHighlights: DiffHighlight[] = [];
 
-  console.log('[DEBUG] computeDiffViews - Diff 처리 시작:', {
-    diffCount: sorted.length,
-    diffs: sorted.map(d => ({ id: d.id, roundId: d.roundId, hasRoundId: !!d.roundId }))
-  });
-
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
     const to = tr.mapping.map(diff.position + diff.originalText.length);
+
+    // Check if positions are valid
+    if (from < 0 || to > tr.doc.content.size || from > to) {
+      continue; // Skip invalid diff
+    }
+
     tr.insertText(diff.replacementText, from, to);
 
     // Apply ai-generated mark with roundId so modified editor carries proper marks
     if (markType && diff.roundId) {
-      console.log('[DEBUG] computeDiffViews - 마크 적용:', {
-        diffId: diff.id,
-        roundId: diff.roundId,
-        from,
-        to: from + diff.replacementText.length,
-        textLength: diff.replacementText.length
-      });
       tr.addMark(
         from,
         from + diff.replacementText.length,
         markType.create({ state: 'ai-generated', roundId: diff.roundId }),
       );
-    } else {
-      console.warn('[DEBUG] computeDiffViews - 마크 스킵:', {
-        diffId: diff.id,
-        hasMarkType: !!markType,
-        hasRoundId: !!diff.roundId,
-        roundId: diff.roundId
-      });
     }
 
     modifiedHighlights.push({
@@ -81,33 +69,6 @@ export function computeDiffViews(
 
   const modifiedState = editorState.apply(tr);
   const modifiedDocJSON = modifiedState.doc.toJSON() as Record<string, unknown>;
-
-  // Verify marks in the modified document JSON
-  let markedTextNodes = 0;
-  const jsonMarkSamples: any[] = [];
-  if (modifiedDocJSON.content && Array.isArray(modifiedDocJSON.content)) {
-    const checkNode = (node: any) => {
-      if (node.content && Array.isArray(node.content)) {
-        node.content.forEach(checkNode);
-      }
-      if (node.type === 'text' && node.marks) {
-        markedTextNodes++;
-        // Sample first few marked text nodes
-        if (jsonMarkSamples.length < 3) {
-          jsonMarkSamples.push({
-            text: node.text?.slice(0, 30),
-            marks: node.marks
-          });
-        }
-      }
-    };
-    modifiedDocJSON.content.forEach(checkNode);
-  }
-  console.log('[DEBUG] computeDiffViews - JSON 생성 완료:', {
-    markedTextNodes,
-    jsonMarkSamples,
-    hasContent: !!modifiedDocJSON.content
-  });
 
   return {
     originalDocJSON,
@@ -127,11 +88,6 @@ export function applyAllDiffs(
   const { tr } = editor.state;
   const markType = editor.schema.marks.textState;
 
-  console.log('[DEBUG] applyAllDiffs 시작:', {
-    diffCount: sorted.length,
-    diffs: sorted.map(d => ({ id: d.id, roundId: d.roundId, text: d.replacementText.slice(0, 30) }))
-  });
-
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
     const to = tr.mapping.map(diff.position + diff.originalText.length);
@@ -139,13 +95,6 @@ export function applyAllDiffs(
 
     // Apply ai-generated mark with roundId to the replacement text
     if (markType) {
-      console.log('[DEBUG] Diff 마크 적용:', {
-        diffId: diff.id,
-        roundId: diff.roundId,
-        roundIdExists: !!diff.roundId,
-        from,
-        to: from + diff.replacementText.length
-      });
       tr.addMark(
         from,
         from + diff.replacementText.length,
@@ -156,6 +105,149 @@ export function applyAllDiffs(
 
   tr.setMeta('programmaticTextState', true);
   editor.view.dispatch(tr);
+}
+
+// --- Compute individual diffs from smart-edit response ---
+
+export interface SmartEditDiff {
+  originalText: string;
+  replacementText: string;
+  position: number;
+}
+
+/**
+ * Build a character-level mapping from text index to ProseMirror position.
+ * Accounts for paragraph separators ('\n\n') inserted by textBetween.
+ */
+function buildCharToPmMap(editor: Editor): number[] {
+  const charMap: number[] = [];
+  let isFirstBlock = true;
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isTextblock) return;
+
+    // Add separator entries for '\n\n' between paragraphs
+    if (!isFirstBlock) {
+      charMap.push(-1); // \n
+      charMap.push(-1); // \n
+    }
+    isFirstBlock = false;
+
+    // Add each text character's absolute PM position
+    node.forEach((child, childOffset) => {
+      if (child.isText && child.text) {
+        for (let i = 0; i < child.text.length; i++) {
+          charMap.push(pos + 1 + childOffset + i);
+        }
+      }
+    });
+
+    return false; // Don't descend further
+  });
+
+  return charMap;
+}
+
+/**
+ * Compare original and edited documents character by character.
+ * Returns an array of SmartEditDiff objects with accurate ProseMirror positions.
+ * Adjacent changes are merged into single diffs.
+ */
+export function computeSmartEditDiffs(
+  editor: Editor,
+  originalText: string,
+  editedText: string,
+): SmartEditDiff[] {
+  // 1. Build character-level mapping
+  const charMap = buildCharToPmMap(editor);
+
+  if (charMap.length !== originalText.length) {
+    return []; // Fallback to single diff
+  }
+
+  // 2. Compute character-level diff
+  const changes = diffChars(originalText, editedText);
+
+  // 3. Collect raw diffs with PM positions
+  const rawDiffs: SmartEditDiff[] = [];
+  let textPos = 0;
+
+  for (let i = 0; i < changes.length; i++) {
+    const change = changes[i];
+
+    if (change.removed) {
+      const next = (i + 1 < changes.length && changes[i + 1].added) ? changes[i + 1] : null;
+      const pmPos = charMap[textPos];
+
+      if (pmPos === undefined || pmPos === -1) {
+        // Skip changes at separator positions
+        textPos += change.value.length;
+        if (next) i++;
+        continue;
+      }
+
+      if (next) {
+        // Replacement: removed + added
+        rawDiffs.push({
+          originalText: change.value,
+          replacementText: next.value,
+          position: pmPos,
+        });
+        textPos += change.value.length;
+        i++; // Skip the added part
+      } else {
+        // Pure deletion
+        rawDiffs.push({
+          originalText: change.value,
+          replacementText: '',
+          position: pmPos,
+        });
+        textPos += change.value.length;
+      }
+    } else if (change.added) {
+      // Pure addition (no preceding removal)
+      const pmPos = textPos < charMap.length
+        ? charMap[textPos]
+        : (charMap.length > 0 ? charMap[charMap.length - 1] + 1 : 1);
+
+      if (pmPos !== -1) {
+        rawDiffs.push({
+          originalText: '',
+          replacementText: change.value,
+          position: pmPos,
+        });
+      }
+    } else {
+      // Unchanged - advance position
+      textPos += change.value.length;
+    }
+  }
+
+  // 4. Merge adjacent diffs (gap <= 2 chars) to reduce noise
+  const merged: SmartEditDiff[] = [];
+  for (const diff of rawDiffs) {
+    const last = merged[merged.length - 1];
+    if (last) {
+      const lastEndPm = last.position + last.originalText.length;
+      const gap = diff.position - lastEndPm;
+
+      if (gap >= 0 && gap <= 2) {
+        // Grab the unchanged gap text from the original
+        const lastEndTextIdx = charMap.indexOf(lastEndPm);
+        const diffStartTextIdx = charMap.indexOf(diff.position);
+
+        if (lastEndTextIdx >= 0 && diffStartTextIdx >= 0 && diffStartTextIdx >= lastEndTextIdx) {
+          const gapText = originalText.slice(lastEndTextIdx, diffStartTextIdx);
+          last.originalText += gapText + diff.originalText;
+          last.replacementText += gapText + diff.replacementText;
+          continue;
+        }
+      }
+    }
+    merged.push({ ...diff });
+  }
+
+  return merged;
 }
 
 // --- Clean up stale marks after diff acceptance ---
