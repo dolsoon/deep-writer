@@ -128,6 +128,9 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
   addProseMirrorPlugins() {
     const onDragSelection = this.options.onDragSelection ?? null;
 
+    // Map to store global mouseup handlers per EditorView to avoid 'any' and handle multiple instances
+    const globalMouseUpHandlers = new WeakMap<EditorView, (e: MouseEvent) => void>();
+
     // Drag detection state (closure-scoped, not plugin state).
     // We measure the distance between mousedown and mouseup to distinguish
     // a drag-selection from a click (single, double, or triple).
@@ -265,13 +268,14 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
             }, 0);
           };
 
-          // Attach handler to view so mousedown can access it
-          (editorView as any)._handleGlobalMouseUp = handleGlobalMouseUp;
+          // Attach handler to WeakMap so mousedown can access it
+          globalMouseUpHandlers.set(editorView, handleGlobalMouseUp);
 
           return {
             update: () => {},
             destroy: () => {
               window.removeEventListener('mouseup', handleGlobalMouseUp);
+              globalMouseUpHandlers.delete(editorView);
             }
           };
         },
@@ -281,7 +285,7 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
             mousedown: (view: EditorView, event: Event) => {
               const e = event as MouseEvent;
               mouseDownCoords = { x: e.clientX, y: e.clientY };
-              const handler = (view as any)._handleGlobalMouseUp;
+              const handler = globalMouseUpHandlers.get(view);
               if (handler) {
                 window.addEventListener('mouseup', handler);
               }

@@ -395,7 +395,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
                   }
                   tr.setMeta('programmaticTextState', true);
                   editor.view.dispatch(tr);
-                  setTooltipData(null);
+                  handleTooltipDismiss();
                 }
               }}
               onDismiss={handleTooltipDismiss}

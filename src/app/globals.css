@@ -83,15 +83,7 @@
   background-color: rgba(34, 197, 94, 0.18);
 }
 
-/* Marking selection style (unified for all levels) */
-.marking-selection {
-  background-color: rgb(219 234 254);
-  border-radius: 2px;
-}
-
-:where(.dark, .dark *) .marking-selection {
-  background-color: rgba(59, 130, 246, 0.15);
-}
+/* Marking selection style — base (overridden below contribution styles for specificity) */
 
 /* Alternative Suggestions Tooltip */
 .alternatives-tooltip {
@@ -730,6 +722,12 @@
   border-radius: 2px;
 }
 
+/* Specific intuitive highlight for newly generated alternatives in Highlight Mode */
+.contribution-alternative {
+  background-color: rgb(219 234 254);
+  border-radius: 2px;
+}
+
 :where(.dark, .dark *) .contribution-level-5 {
   background-color: transparent;
 }
@@ -748,6 +746,20 @@
 
 :where(.dark, .dark *) .contribution-level-1 {
   background-color: rgba(168, 85, 247, 0.35);
+}
+
+:where(.dark, .dark *) .contribution-alternative {
+  background-color: rgba(59, 130, 246, 0.25);
+}
+
+/* Marking selection style (placed after contribution levels to win CSS cascade) */
+.marking-selection {
+  background-color: rgb(219 234 254);
+  border-radius: 2px;
+}
+
+:where(.dark, .dark *) .marking-selection {
+  background-color: rgba(59, 130, 246, 0.15);
 }
 
 /* Clause selection highlight in diff view */
