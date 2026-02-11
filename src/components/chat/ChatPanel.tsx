@@ -87,7 +87,7 @@ function ChatInput({ onSend, disabled }: { onSend: (text: string) => void; disab
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, [text]);
 
   return (
