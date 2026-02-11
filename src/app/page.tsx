@@ -6,8 +6,7 @@ import { useSessionStore } from '@/stores/useSessionStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { useLoadingStore } from '@/stores/useLoadingStore';
 import { useInspectStore } from '@/stores/useInspectStore';
-import { GoalModal } from '@/components/goal/GoalModal';
-import { StartModeSelector } from '@/components/goal/StartModeSelector';
+import { useChatStore } from '@/stores/useChatStore';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -33,14 +32,15 @@ import { computeD3Base } from '@/lib/scoring';
 
 // --- Types ---
 
-type AppState = 'loading' | 'goal-prompt' | 'mode-select' | 'editor';
+type AppState = 'loading' | 'editor';
 
 // --- Component ---
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('loading');
-  const [goal, setGoal] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showNewSessionConfirm, setShowNewSessionConfirm] = useState(false);
+  const [sessionKey, setSessionKey] = useState(0);
   const editorHandleRef = useRef<CoWriThinkEditorHandle>(null);
   const [readyEditor, setReadyEditor] = useState<Editor | null>(null);
 
@@ -63,16 +63,14 @@ export default function Home() {
   const pendingDiffs = useMemo(() => activeDiffs.filter((d) => d.state === 'pending'), [activeDiffs]);
   const hasPendingDiffs = pendingDiffs.length > 0;
 
-  // On mount, try to load session from localStorage
+  // On mount, load existing session or create a new empty one
   useEffect(() => {
     const hasExisting = loadFromStorage();
-    if (hasExisting) {
-      setGoal(useSessionStore.getState().session?.goal ?? '');
-      setAppState('editor');
-    } else {
-      setAppState('goal-prompt');
+    if (!hasExisting) {
+      initSession('');
     }
-  }, [loadFromStorage]);
+    setAppState('editor');
+  }, [loadFromStorage, initSession]);
 
   // Auto-open settings modal only if no client key AND no server key
   useEffect(() => {
@@ -90,47 +88,24 @@ export default function Home() {
       });
   }, []);
 
-  // Goal submission handler
-  const handleGoalSubmit = useCallback((submittedGoal: string) => {
-    setGoal(submittedGoal);
-    setAppState('mode-select');
-  }, []);
-
-  // Start from scratch handler
-  const handleStartFromScratch = useCallback(() => {
-    initSession(goal);
-    setAppState('editor');
-  }, [goal, initSession]);
-
-  // Generate first draft handler
-  const handleGenerateFirstDraft = useCallback(() => {
-    initSession(goal);
-    setAppState('editor');
-    // Trigger AI first-draft generation after editor mounts
-    setTimeout(() => {
-      const editor = editorHandleRef.current?.getEditor();
-      if (editor) {
-        const currentGoal = useSessionStore.getState().session?.goal ?? goal;
-        generation.smartEditRequest(editor, currentGoal, 'Write a first draft based on the writing goal.');
-      }
-    }, 100);
-  }, [goal, initSession, generation]);
-
-  // Goal edit handler (from header)
-  const handleGoalEdit = useCallback(() => {
-    // Side panel goal section has its own edit button for direct editing
-  }, []);
-
-  // New session handler -- clears localStorage and resets to goal prompt
+  // New session handler -- shows confirmation dialog
   const handleNewSession = useCallback(() => {
+    setShowNewSessionConfirm(true);
+  }, []);
+
+  // Confirm new session -- clears everything and re-initializes
+  const handleConfirmNewSession = useCallback(() => {
     const sessionId = localStorage.getItem('cowrithink-active-session');
     if (sessionId) {
       localStorage.removeItem(`cowrithink-session-${sessionId}`);
     }
     localStorage.removeItem('cowrithink-active-session');
-    setGoal('');
-    setAppState('goal-prompt');
-  }, []);
+    useChatStore.getState().clearMessages();
+    useEditorStore.setState({ activeDiffs: [], textStates: {} });
+    initSession('');
+    setSessionKey((k) => k + 1);
+    setShowNewSessionConfirm(false);
+  }, [initSession]);
 
   // Track the modified panel's editor so Accept All uses user-edited content
   const modifiedEditorRef = useRef<import('@tiptap/core').Editor | null>(null);
@@ -144,16 +119,25 @@ export default function Home() {
     const modifiedEditor = modifiedEditorRef.current;
     if (!editor) return;
 
+    // Safety: don't replace editor content with empty modified panel content.
+    // This prevents losing user text when diff computation fails.
+    if (modifiedEditor) {
+      const modifiedTextLen = modifiedEditor.state.doc.textContent.length;
+      const originalTextLen = editor.state.doc.textContent.length;
+      if (modifiedTextLen === 0 && originalTextLen > 0) {
+        useEditorStore.getState().resolveAllDiffs('reject');
+        updateDiffs(editor, []);
+        modifiedEditorRef.current = null;
+        return;
+      }
+    }
+
     // Detect user edits in modified panel before transferring content.
-    // For each diff with a roundId, count how many characters still carry
-    // that roundId's ai-generated mark. If fewer than the original replacement
-    // text length, the user edited that round's text.
     if (modifiedEditor) {
       const editedRoundIds = new Set<string>();
       const markType = modifiedEditor.schema.marks.textState;
 
       if (markType) {
-        // Count remaining ai-generated chars per roundId
         const aiCharsByRound = new Map<string, number>();
         modifiedEditor.state.doc.descendants((node) => {
           if (!node.isText) return;
@@ -164,7 +148,6 @@ export default function Home() {
           }
         });
 
-        // Compare against original replacement text lengths
         for (const diff of pendingDiffs) {
           if (!diff.roundId) continue;
           const remaining = aiCharsByRound.get(diff.roundId) ?? 0;
@@ -211,7 +194,7 @@ export default function Home() {
   }, []);
 
   // Chat hook
-  const { sendMessage } = useChat(editorHandleRef, session?.goal ?? goal);
+  const { sendMessage } = useChat(editorHandleRef, session?.goal ?? '');
 
   // Loading state
   if (appState === 'loading') {
@@ -224,30 +207,40 @@ export default function Home() {
     );
   }
 
-  // Goal prompt state
-  if (appState === 'goal-prompt') {
-    return <GoalModal onSubmit={handleGoalSubmit} />;
-  }
-
-  // Mode select state
-  if (appState === 'mode-select') {
-    return (
-      <StartModeSelector
-        goal={goal}
-        onStartFromScratch={handleStartFromScratch}
-        onGenerateFirstDraft={handleGenerateFirstDraft}
-      />
-    );
-  }
-
   // Get editor instance for components that need it
   const editorInstance = editorHandleRef.current?.getEditor() ?? null;
 
   // Editor state
   return (
     <div className="flex h-screen flex-col">
-      <AppHeader goal={session?.goal} theme={theme} onGoalEdit={handleGoalEdit} onNewSession={handleNewSession} onToggleTheme={toggleTheme} onOpenSettings={() => setShowSettings(true)} />
+      <AppHeader theme={theme} onNewSession={handleNewSession} onToggleTheme={toggleTheme} onOpenSettings={() => setShowSettings(true)} />
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showNewSessionConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+              New Session
+            </h2>
+            <p className="mb-6 text-sm text-gray-600 dark:text-gray-400">
+              Are you sure? All current work will be lost.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowNewSessionConfirm(false)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmNewSession}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+              >
+                Clear & Start New
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {generation.error && (
         <div className="flex items-center justify-between bg-red-50 px-4 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
           <span>{generation.error}</span>
@@ -283,6 +276,7 @@ export default function Home() {
               <div className="mx-auto max-w-4xl min-h-full bg-white shadow-md border border-gray-200 dark:bg-gray-900 dark:border-gray-800 rounded-lg p-8 md:p-12">
                 {isGenerating && <SkeletonPlaceholder />}
                 <CoWriThinkEditor
+                  key={sessionKey}
                   ref={editorHandleRef}
                   initialContent={session?.documentState ?? ''}
                   onEditorReady={handleEditorReady}
