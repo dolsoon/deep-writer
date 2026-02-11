@@ -54,7 +54,7 @@ const SELECTION_CLASS = 'marking-selection';
 
 export type ExpandLevel = 'word' | 'phrase' | 'sentence' | 'paragraph' | 'all';
 
-function getRangeForLevel(
+export function getRangeForLevel(
   level: SelectionLevel,
   doc: ProseMirrorNode,
   pos: number,

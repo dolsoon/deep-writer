@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { JSONContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -25,13 +25,14 @@ import {
   activateAnnotationMode,
   deactivateAnnotationMode,
   setAnnotationTool,
+  setAnnotationLevel,
 } from '@/extensions/UserAnnotationPlugin';
 import { InspectClickPlugin } from '@/extensions/InspectClickPlugin';
 import { DeletionMarkerPlugin } from '@/extensions/DeletionMarkerPlugin';
 import { FlashHighlightPlugin, triggerFlashHighlight } from '@/extensions/FlashHighlightPlugin';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { useUserAnnotationStore } from '@/stores/useUserAnnotationStore';
-import { MarkingExtension, clearMarkingSelection, expandMarkingSelection } from '@/extensions/MarkingExtension';
+import { MarkingExtension, clearMarkingSelection, expandMarkingSelection, getRangeForLevel } from '@/extensions/MarkingExtension';
 import { getWordBoundary } from '@/lib/boundaries';
 import type { DragSelectionData, ConstraintData, ExpandLevel } from '@/extensions/MarkingExtension';
 import { AlternativesTooltip } from '@/components/editor/AlternativesTooltip';
@@ -130,6 +131,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     const graphNodeCount = useContributionGraphStore((s) => s.nodes.size);
     const isAnnotationMode = useUserAnnotationStore((s) => s.isAnnotationMode);
     const annotationTool = useUserAnnotationStore((s) => s.activeTool);
+    const annotationLevel = useUserAnnotationStore((s) => s.selectedLevel);
     const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
     // Two-step alternative generation: selection button → tooltip
@@ -138,6 +140,24 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     const [activeLevel, setActiveLevel] = useState<ExpandLevel | 'word'>('word');
 
     // Flash highlight is handled by FlashHighlightPlugin via triggerFlashHighlight()
+
+    // Pre-compute expanded text/context for sentence and paragraph levels
+    // so the tooltip can background-fetch them immediately
+    const levelTexts = useMemo(() => {
+      if (!tooltipData || !editorRef.current?.view) return null;
+      const doc = editorRef.current.view.state.doc;
+      const docSize = doc.content.size;
+      const result: Record<string, { text: string; context: string }> = {};
+      for (const level of ['sentence', 'paragraph'] as const) {
+        const range = getRangeForLevel(level, doc, _originalFrom);
+        const text = doc.textBetween(range.from, range.to, ' ').trim();
+        if (!text) continue;
+        const ctxStart = Math.max(0, range.from - 200);
+        const ctxEnd = Math.min(docSize, range.to + 200);
+        result[level] = { text, context: doc.textBetween(ctxStart, ctxEnd, ' ') };
+      }
+      return result;
+    }, [tooltipData]);
 
     // Pre-fetch alternatives when text is selected
     const prefetch = useAlternatives();
@@ -393,19 +413,24 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     useEffect(() => {
       if (!editor) return;
       if (isAnnotationMode) {
-        activateAnnotationMode(editor, annotationTool);
-        // Dismiss alternatives when entering annotation mode
+        activateAnnotationMode(editor, annotationTool, annotationLevel);
         dismissSelection();
       } else {
         deactivateAnnotationMode(editor);
       }
-    }, [editor, isAnnotationMode, annotationTool]);
+    }, [editor, isAnnotationMode, annotationTool, annotationLevel]);
 
     // Sync annotation tool changes
     useEffect(() => {
       if (!editor || !isAnnotationMode) return;
       setAnnotationTool(editor, annotationTool);
     }, [editor, isAnnotationMode, annotationTool]);
+
+    // Sync annotation level changes
+    useEffect(() => {
+      if (!editor || !isAnnotationMode) return;
+      setAnnotationLevel(editor, annotationLevel);
+    }, [editor, isAnnotationMode, annotationLevel]);
 
     return (
       <div
@@ -430,6 +455,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
               context={tooltipData.context}
               goal={sessionGoal}
               prefetchedAlternatives={prefetch.alternatives}
+              levelTexts={levelTexts}
               onReplace={(alternative) => {
                 // Collect parentRounds from the text being replaced
                 const parentRoundIds = collectRoundIds(editor, tooltipData.from, tooltipData.to);

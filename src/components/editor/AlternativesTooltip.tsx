@@ -6,6 +6,7 @@ import { AnnotatableText, type WordAnnotation, type AnnotatableWord } from './An
 import { tokenize } from '@/lib/wordDiff';
 import { computeWordDiff } from '@/lib/wordDiff';
 import type { ExpandLevel } from '@/extensions/MarkingExtension';
+import { getApiHeaders } from '@/lib/apiHeaders';
 
 // --- Types ---
 
@@ -25,6 +26,7 @@ interface AlternativesTooltipProps {
   onExpandSelection: (level: ExpandLevel) => void;
   activeLevel?: ExpandLevel | 'word';
   prefetchedAlternatives?: Alternative[] | null;
+  levelTexts?: Record<string, { text: string; context: string }> | null;
 }
 
 const EXPAND_LEVELS: { level: ExpandLevel; label: string }[] = [
@@ -173,6 +175,7 @@ export function AlternativesTooltip({
   onExpandSelection,
   activeLevel = 'word',
   prefetchedAlternatives,
+  levelTexts,
 }: AlternativesTooltipProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const promptInputRef = useRef<HTMLInputElement>(null);
@@ -180,8 +183,16 @@ export function AlternativesTooltip({
   const { alternatives, isLoading, error, fetchAlternatives, reset } = useAlternatives();
 
   // Per-level cache: level -> { alternatives, annotations }
-  const cacheRef = useRef<Record<string, LevelCache>>({});
-  const [displayAlts, setDisplayAlts] = useState<Alternative[] | null>(null);
+  // Initialize with prefetched data to avoid flash of empty/loading state
+  const hasPrefetch = activeLevel === 'word' && prefetchedAlternatives && prefetchedAlternatives.length > 0;
+  const cacheRef = useRef<Record<string, LevelCache>>(
+    hasPrefetch
+      ? { word: { alternatives: prefetchedAlternatives, originalAnnotations: new Map(), altAnnotations: new Map() } }
+      : {},
+  );
+  const [displayAlts, setDisplayAlts] = useState<Alternative[] | null>(
+    hasPrefetch ? prefetchedAlternatives : null,
+  );
   const fetchingLevelRef = useRef<string | null>(null);
 
   // Annotation state
@@ -240,6 +251,48 @@ export function AlternativesTooltip({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLevel]);
+
+  // Background-fetch sentence and paragraph alternatives as soon as word-level results are displayed
+  const bgFetchedRef = useRef(false);
+  useEffect(() => {
+    if (bgFetchedRef.current || !displayAlts || activeLevel !== 'word' || !levelTexts) return;
+    bgFetchedRef.current = true;
+
+    const abortController = new AbortController();
+    const levels = ['sentence', 'paragraph'] as const;
+
+    for (const level of levels) {
+      const info = levelTexts[level];
+      if (!info || cacheRef.current[level]) continue;
+
+      const count = level === 'paragraph' ? 2 : undefined;
+      fetch('/api/alternatives', {
+        method: 'POST',
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          selectedText: info.text,
+          context: info.context,
+          goal,
+          ...(count != null && { count }),
+          level,
+        }),
+        signal: abortController.signal,
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok || !data.alternatives?.length) return;
+          cacheRef.current[level] = {
+            alternatives: data.alternatives,
+            originalAnnotations: new Map(),
+            altAnnotations: new Map(),
+          };
+        })
+        .catch(() => { /* ignore aborted / failed background fetches */ });
+    }
+
+    return () => abortController.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAlts, levelTexts]);
 
   // Persist annotation changes to cache
   const handleOriginalAnnotationChange = useCallback(
