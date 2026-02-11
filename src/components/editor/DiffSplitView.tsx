@@ -63,38 +63,44 @@ interface DiffPanelProps {
 }
 
 function DiffPanel({ docJSON, highlights, highlightClass, label, editable = false, onEditorReady }: DiffPanelProps) {
-  const editor = useEditor(
-    {
-      extensions: [
-        StarterKit,
-        TextStateExtension.configure({
-          disableAutoMarkFix: true, // Preserve marks from computeDiffViews
-        }),
-        createHighlightExtension(highlights, highlightClass),
-      ],
-      content: docJSON,
-      editable,
-      editorProps: {
-        attributes: {
-          class: 'focus:outline-none min-h-full h-full',
-        },
+  // Stabilize extensions to prevent useEditor from recreating on every render.
+  // highlights/highlightClass are stable when diffData is stable (via diffKey).
+  const extensionsRef = useRef(
+    [
+      StarterKit,
+      TextStateExtension.configure({
+        disableAutoMarkFix: true, // Preserve marks from computeDiffViews
+      }),
+      createHighlightExtension(highlights, highlightClass),
+    ],
+  );
+
+  const editor = useEditor({
+    extensions: extensionsRef.current,
+    content: docJSON,
+    editable,
+    editorProps: {
+      attributes: {
+        class: 'focus:outline-none min-h-full h-full',
       },
     },
-    [docJSON, highlights, highlightClass],
-  );
+  });
+
+  // When docJSON changes (new diff computation), update editor content directly
+  // instead of relying on useEditor dep recreation (which causes null flash).
+  const prevDocRef = useRef(docJSON);
+  useEffect(() => {
+    if (editor && docJSON !== prevDocRef.current) {
+      prevDocRef.current = docJSON;
+      editor.commands.setContent(docJSON);
+    }
+  }, [editor, docJSON]);
 
   useEffect(() => {
     if (editor && onEditorReady) {
       onEditorReady(editor);
     }
   }, [editor, onEditorReady]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      editor?.destroy();
-    };
-  }, [editor]);
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -131,9 +137,13 @@ export function DiffSplitView({ editor, pendingDiffs, onModifiedEditorReady }: D
   const modifiedEditorRef = useRef<Editor | null>(null);
   const [clauseSelection, setClauseSelection] = useState<ClauseSelection | null>(null);
 
+  // Compute diff views once when pendingDiffs change.
+  // Use diff IDs as stable dependency instead of editor.state (which changes on every transaction).
+  const diffKey = pendingDiffs.map((d) => d.id).join(',');
   const diffData = useMemo(
     () => computeDiffViews(editor.state, pendingDiffs),
-    [editor.state, pendingDiffs],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [diffKey],
   );
 
   const { leftRef, rightRef, handleLeftScroll, handleRightScroll } =

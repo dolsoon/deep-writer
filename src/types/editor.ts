@@ -20,7 +20,8 @@ export interface DiffEntry {
   id: string;
   originalText: string;
   replacementText: string;
-  position: number; // ProseMirror document position
+  position: number; // ProseMirror document position (start)
+  endPosition?: number; // Explicit ProseMirror end position (used when text length != PM span)
   state: 'pending' | 'accepted' | 'rejected' | 'restored';
   roundId: string | null; // Links diff to its generation round for contribution tracking
 }
