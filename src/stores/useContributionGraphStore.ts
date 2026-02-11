@@ -93,6 +93,21 @@ export const useContributionGraphStore = create<ContributionGraphStore>()(
       nodes.set(roundId, updated);
       _memoCache = new Map();
       set({ nodes });
+
+      // Log LLM score update
+      const { d1, d2, d3 } = analysis.scores;
+      const edgesByDim = (dim: string) =>
+        analysis.edges
+          .filter((e) => e.dimension === dim)
+          .map((e) => `${e.to}(${e.strength}) "${e.reason}"`)
+          .join(', ');
+      console.log(
+        `[Score Update] ${roundId} (${existing.metadata.type})\n` +
+        `  D1 (Wording):    ${d1.toFixed(2)}${edgesByDim('d1') ? `  edges: ${edgesByDim('d1')}` : ''}\n` +
+        `  D2 (Concept):    ${d2.toFixed(2)}${edgesByDim('d2') ? `  edges: ${edgesByDim('d2')}` : ''}\n` +
+        `  D3 (Evaluation): ${d3.toFixed(2)}${edgesByDim('d3') ? `  edges: ${edgesByDim('d3')}` : ''}\n` +
+        `  Summary: ${analysis.narrativeSummary}`,
+      );
     },
 
     getNode: (roundId: string): RoundNode | undefined => {

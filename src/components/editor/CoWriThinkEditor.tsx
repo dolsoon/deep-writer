@@ -24,6 +24,7 @@ import { InspectClickPlugin } from '@/extensions/InspectClickPlugin';
 import { DeletionMarkerPlugin } from '@/extensions/DeletionMarkerPlugin';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { MarkingExtension, clearMarkingSelection, expandMarkingSelection } from '@/extensions/MarkingExtension';
+import { getWordBoundary } from '@/lib/boundaries';
 import type { DragSelectionData, ConstraintData, ExpandLevel } from '@/extensions/MarkingExtension';
 import { AlternativesTooltip } from '@/components/editor/AlternativesTooltip';
 import { AlternativesButton } from '@/components/editor/AlternativesButton';
@@ -135,9 +136,43 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     }, []);
 
     const handleGenerateAlternatives = useCallback(() => {
-      if (!selectionData) return;
-      // Move from selection button to tooltip
-      setTooltipData(selectionData);
+      if (!selectionData || !editorRef.current?.view) return;
+      const view = editorRef.current.view;
+      const doc = view.state.doc;
+
+      // Snap to word boundaries on Alternatives click
+      const startWord = getWordBoundary(doc, selectionData.from);
+      const endWord = getWordBoundary(doc, selectionData.to);
+      const snappedFrom = startWord.from;
+      const snappedTo = endWord.to;
+
+      const text = doc.textBetween(snappedFrom, snappedTo, ' ');
+      if (text.trim().length < 2) return;
+
+      // Update marking decoration to match snapped range
+      const result = expandMarkingSelection(view, 'word', snappedFrom, { from: snappedFrom, to: snappedTo });
+      if (!result) return;
+
+      _originalFrom = snappedFrom;
+      _originalTo = snappedTo;
+
+      // Recompute rect and context for snapped range
+      const coordsFrom = view.coordsAtPos(snappedFrom);
+      const coordsTo = view.coordsAtPos(snappedTo);
+      const rect = new DOMRect(
+        coordsFrom.left,
+        coordsFrom.top,
+        coordsTo.right - coordsFrom.left,
+        coordsTo.bottom - coordsFrom.top,
+      );
+
+      const docSize = doc.content.size;
+      const contextStart = Math.max(0, snappedFrom - 200);
+      const contextEnd = Math.min(docSize, snappedTo + 200);
+      const context = doc.textBetween(contextStart, contextEnd, ' ');
+
+      // Move from selection button to tooltip with snapped data
+      setTooltipData({ from: snappedFrom, to: snappedTo, text, context, rect });
       setSelectionData(null);
     }, [selectionData]);
 

@@ -213,42 +213,24 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
               const { from, to } = editorView.state.selection;
               if (from === to) return;
 
-              // Snap to word boundaries:
-              const doc = editorView.state.doc;
-              const docText = doc.textBetween(0, doc.content.size, '', '\n');
-              let adjustedFrom = from;
-              const fromCharIdx = docText.length > 0
-                ? Math.min(doc.textBetween(0, Math.min(from, doc.content.size), '', '\n').length, docText.length - 1)
-                : 0;
-              if (/\s/.test(docText[fromCharIdx] ?? '')) {
-                // Skip whitespace forward to the next word
-                let i = fromCharIdx;
-                while (i < docText.length && /\s/.test(docText[i])) i++;
-                if (i < docText.length) adjustedFrom = from + (i - fromCharIdx);
-              }
+              // Use exact user selection without word-boundary snapping.
+              // Expansion happens later when the user clicks the Alternatives button.
+              const text = editorView.state.doc.textBetween(from, to, ' ');
+              if (text.trim().length < 2) return;
 
-              const startWord = getWordBoundary(doc, adjustedFrom);
-              const endWord = getWordBoundary(doc, to);
-              const snappedFrom = startWord.from;
-              const snappedTo = endWord.to;
-
-              const text = editorView.state.doc.textBetween(snappedFrom, snappedTo, ' ');
-              if (text.length < 2) return;
-
-              // Update the editor selection to match the snapped range
+              // Apply marking decoration so highlight persists when tooltip takes focus
               const tr = editorView.state.tr.setSelection(
-                TextSelection.create(editorView.state.doc, snappedFrom, snappedTo),
+                TextSelection.create(editorView.state.doc, from, to),
               );
-              // Set marking decoration so highlight persists when tooltip takes focus
               const newPluginState: MarkingPluginState = {
-                selectionLevel: 'word',
-                selectedRange: { from: snappedFrom, to: snappedTo },
+                selectionLevel: null,
+                selectedRange: { from, to },
                 decorations: DecorationSet.empty,
               };
               tr.setMeta(markingPluginKey, newPluginState);
               editorView.dispatch(tr);
 
-              // Get the bounding rect of the updated browser selection
+              // Get the bounding rect of the browser selection
               const sel = window.getSelection();
               if (!sel || sel.rangeCount === 0) return;
               const rect = sel.getRangeAt(0).getBoundingClientRect();
@@ -256,15 +238,15 @@ export const MarkingExtension = Extension.create<MarkingExtensionOptions>({
 
               // Build surrounding context (~200 chars before and after)
               const docSize = editorView.state.doc.content.size;
-              const contextStart = Math.max(0, snappedFrom - 200);
-              const contextEnd = Math.min(docSize, snappedTo + 200);
+              const contextStart = Math.max(0, from - 200);
+              const contextEnd = Math.min(docSize, to + 200);
               const context = editorView.state.doc.textBetween(
                 contextStart,
                 contextEnd,
                 ' ',
               );
 
-              onDragSelection({ from: snappedFrom, to: snappedTo, text, context, rect });
+              onDragSelection({ from, to, text, context, rect });
             }, 0);
           };
 

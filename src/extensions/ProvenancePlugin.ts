@@ -46,6 +46,7 @@ export const ProvenancePlugin = Extension.create<ProvenancePluginOptions>({
 
         appendTransaction(transactions, _oldState, newState) {
           if (!onProvenanceEvent) return null;
+          if (!newState?.doc) return null;
 
           for (const tr of transactions) {
             if (!tr.docChanged) continue;
@@ -60,6 +61,8 @@ export const ProvenancePlugin = Extension.create<ProvenancePluginOptions>({
                 if (mark.type.name === 'textState') {
                   const from = (step as unknown as { from: number }).from;
                   const to = (step as unknown as { to: number }).to;
+                  const docSize = newState.doc.content.size;
+                  if (from < 0 || to > docSize || from >= to) continue;
                   const text = newState.doc.textBetween(from, to, ' ');
 
                   // Flush any pending typing buffer before logging mark event
