@@ -8,6 +8,8 @@ import { useDocumentScores } from '@/hooks/useDocumentScores';
 import { DonutChart } from './DonutChart';
 import { ProvenanceChain } from './ProvenanceChain';
 import { useRoundStore } from '@/stores/useRoundStore';
+import { getAnnotationRanges } from '@/extensions/UserAnnotationPlugin';
+import type { AnnotationRange } from '@/extensions/UserAnnotationPlugin';
 
 // --- Types ---
 
@@ -44,6 +46,95 @@ function getDimensionColor(value: number): string {
   return LEVEL_COLORS.level1.color;
 }
 
+// --- Comparison Logic ---
+
+interface ComparisonResult {
+  accuracy: number;
+  overestimated: number;
+  underestimated: number;
+  totalAnnotated: number;
+  totalAI: number;
+  totalChars: number;
+}
+
+function computeComparison(editor: Editor, annotationRanges: AnnotationRange[]): ComparisonResult {
+  const doc = editor.state.doc;
+  const docSize = doc.content.size;
+
+  // Build a per-character map of user annotations
+  const userAnnotated = new Uint8Array(docSize);
+  for (const range of annotationRanges) {
+    for (let i = range.from; i < range.to && i < docSize; i++) {
+      userAnnotated[i] = 1;
+    }
+  }
+
+  // Build a per-character map of actual AI contribution
+  const actualAI = new Uint8Array(docSize);
+  let totalTextChars = 0;
+
+  doc.descendants((node, pos) => {
+    if (!node.isText) return;
+
+    const textStateMark = node.marks.find((m) => m.type.name === 'textState');
+    const roundId: string | null | undefined = textStateMark?.attrs?.roundId;
+    const state = textStateMark?.attrs?.state;
+
+    const isAI = state === 'ai-generated' && !!roundId;
+
+    for (let i = 0; i < node.nodeSize; i++) {
+      const charPos = pos + i;
+      if (charPos < docSize) {
+        if (isAI) {
+          actualAI[charPos] = 1;
+        }
+        totalTextChars++;
+      }
+    }
+  });
+
+  if (totalTextChars === 0) {
+    return { accuracy: 1, overestimated: 0, underestimated: 0, totalAnnotated: 0, totalAI: 0, totalChars: 0 };
+  }
+
+  let correctlyIdentified = 0;
+  let overestimated = 0;
+  let underestimated = 0;
+  let totalAnnotated = 0;
+  let totalAI = 0;
+
+  // Only count text positions (not structural positions)
+  doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    for (let i = 0; i < node.nodeSize; i++) {
+      const charPos = pos + i;
+      if (charPos >= docSize) continue;
+
+      const annotated = userAnnotated[charPos] === 1;
+      const isAI = actualAI[charPos] === 1;
+
+      if (annotated) totalAnnotated++;
+      if (isAI) totalAI++;
+
+      if (annotated && isAI) correctlyIdentified++;
+      if (annotated && !isAI) overestimated++;
+      if (!annotated && isAI) underestimated++;
+    }
+  });
+
+  const relevantChars = totalAI + totalAnnotated - correctlyIdentified;
+  const accuracy = relevantChars > 0 ? correctlyIdentified / relevantChars : 1;
+
+  return {
+    accuracy,
+    overestimated,
+    underestimated,
+    totalAnnotated,
+    totalAI,
+    totalChars: totalTextChars,
+  };
+}
+
 // --- Component ---
 
 export interface InspectPanelProps {
@@ -60,6 +151,14 @@ export function InspectPanel({ editor }: InspectPanelProps) {
     : [];
 
   const hasSelection = selectedSegment !== null;
+
+  const annotationRanges = useMemo(() => getAnnotationRanges(editor), [editor]);
+  const hasAnnotations = annotationRanges.length > 0;
+
+  const comparison = useMemo(() => {
+    if (!hasAnnotations) return null;
+    return computeComparison(editor, annotationRanges);
+  }, [editor, annotationRanges, hasAnnotations]);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
@@ -81,7 +180,10 @@ export function InspectPanel({ editor }: InspectPanelProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {!hasSelection ? (
-          <DocumentLevelView scores={documentScores} />
+          <>
+            <DocumentLevelView scores={documentScores} />
+            {comparison && <PerceptionComparison comparison={comparison} />}
+          </>
         ) : (
           <SegmentView
             segment={selectedSegment}
@@ -304,6 +406,89 @@ function ProvenanceChainSection() {
         Document Rounds
       </h3>
       <ProvenanceChain roundIds={roundIds.reverse()} />
+    </div>
+  );
+}
+
+function PerceptionComparison({ comparison }: { comparison: ComparisonResult }) {
+  const accuracyPct = Math.round(comparison.accuracy * 100);
+
+  const getAccuracyColor = (pct: number) => {
+    if (pct >= 70) return 'text-green-600 dark:text-green-400';
+    if (pct >= 40) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-red-600 dark:text-red-400';
+  };
+
+  const getAccuracyBg = (pct: number) => {
+    if (pct >= 70) return 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800';
+    if (pct >= 40) return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800';
+    return 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800';
+  };
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-3">
+        Perception vs Reality
+      </h3>
+
+      {/* Accuracy score */}
+      <div className={`p-3 rounded-lg border ${getAccuracyBg(accuracyPct)} mb-3`}>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+            Accuracy
+          </span>
+          <span className={`text-lg font-bold ${getAccuracyColor(accuracyPct)}`}>
+            {accuracyPct}%
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+          You correctly identified {accuracyPct}% of AI-dependent text
+        </p>
+      </div>
+
+      {/* Breakdown stats */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="p-2.5 rounded-lg bg-orange-50 border border-orange-200 dark:bg-orange-900/20 dark:border-orange-800">
+          <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 block">
+            Your annotations
+          </span>
+          <span className="text-sm font-bold text-orange-700 dark:text-orange-400">
+            {comparison.totalAnnotated}
+          </span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-0.5">chars</span>
+        </div>
+        <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 dark:bg-purple-900/20 dark:border-purple-800">
+          <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 block">
+            Actual AI text
+          </span>
+          <span className="text-sm font-bold text-purple-700 dark:text-purple-400">
+            {comparison.totalAI}
+          </span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-0.5">chars</span>
+        </div>
+      </div>
+
+      {/* Over/underestimation */}
+      {(comparison.overestimated > 0 || comparison.underestimated > 0) && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {comparison.overestimated > 0 && (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="inline-block w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+              <span className="text-gray-600 dark:text-gray-400">
+                Overestimated: {comparison.overestimated} chars marked but actually user-written
+              </span>
+            </div>
+          )}
+          {comparison.underestimated > 0 && (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="inline-block w-2 h-2 rounded-full bg-purple-400 flex-shrink-0" />
+              <span className="text-gray-600 dark:text-gray-400">
+                Underestimated: {comparison.underestimated} chars not marked but actually AI-generated
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

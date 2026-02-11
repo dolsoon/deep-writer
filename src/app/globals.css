@@ -1017,50 +1017,36 @@
   background-color: rgba(59, 130, 246, 0.25);
 }
 
-/* User annotation highlights (AI dependency perception) - Orange/Amber */
+/* User annotation highlights — 3 levels of perceived AI reliance */
 .user-annotation-1 {
-  background-color: rgba(251, 146, 60, 0.12);
+  background-color: rgba(251, 146, 60, 0.15);
   border-radius: 2px;
 }
 .user-annotation-2 {
-  background-color: rgba(251, 146, 60, 0.22);
+  background-color: rgba(251, 146, 60, 0.35);
   border-radius: 2px;
 }
 .user-annotation-3 {
-  background-color: rgba(251, 146, 60, 0.34);
-  border-radius: 2px;
-}
-.user-annotation-4 {
-  background-color: rgba(251, 146, 60, 0.46);
-  border-radius: 2px;
-}
-.user-annotation-5 {
-  background-color: rgba(251, 146, 60, 0.58);
+  background-color: rgba(251, 146, 60, 0.55);
   border-radius: 2px;
 }
 
 :where(.dark, .dark *) .user-annotation-1 {
-  background-color: rgba(251, 146, 60, 0.15);
+  background-color: rgba(251, 146, 60, 0.18);
 }
 :where(.dark, .dark *) .user-annotation-2 {
-  background-color: rgba(251, 146, 60, 0.25);
-}
-:where(.dark, .dark *) .user-annotation-3 {
   background-color: rgba(251, 146, 60, 0.38);
 }
-:where(.dark, .dark *) .user-annotation-4 {
-  background-color: rgba(251, 146, 60, 0.50);
-}
-:where(.dark, .dark *) .user-annotation-5 {
-  background-color: rgba(251, 146, 60, 0.62);
+:where(.dark, .dark *) .user-annotation-3 {
+  background-color: rgba(251, 146, 60, 0.58);
 }
 
-/* Annotation painting cursor — highlighter pen SVG */
+/* Annotation painting cursor */
 .ProseMirror.annotation-highlight-mode {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M15.2 3.8l5 5L8.7 20.3l-5.5.7.7-5.5L15.2 3.8z' fill='%23fb923c' stroke='%23c2410c' stroke-width='1.2' stroke-linejoin='round'/%3E%3Cpath d='M3.9 21l-.7-5.5L15.2 3.8' fill='none' stroke='%23c2410c' stroke-width='1.2' stroke-linecap='round'/%3E%3Crect x='13' y='6' width='7.1' height='2.4' rx='.6' transform='rotate(45 16.5 7.2)' fill='%23fed7aa'/%3E%3C/svg%3E") 1 22, pointer;
+  cursor: text;
 }
 .ProseMirror.annotation-eraser-mode {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13.8 2.4c.8-.8 2-.8 2.8 0L21 6.8c.8.8.8 2 0 2.8L11 20' fill='%23fecaca' stroke='%23dc2626' stroke-width='1.2' stroke-linejoin='round' stroke-linecap='round'/%3E%3Cline x1='7' y1='20' x2='20' y2='20' stroke='%23dc2626' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") 3 20, pointer;
+  cursor: text;
 }
 
 /* Live preview while dragging */

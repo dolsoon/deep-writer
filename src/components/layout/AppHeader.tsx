@@ -1,16 +1,15 @@
 'use client';
 
-import { GoalDisplay } from '@/components/goal/GoalDisplay';
 import { ExportButton } from '@/components/shared/ExportButton';
 import { useInspectStore } from '@/stores/useInspectStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { useUserAnnotationStore, ANNOTATION_LEVEL_LABELS } from '@/stores/useUserAnnotationStore';
+import type { AnnotationLevel } from '@/stores/useUserAnnotationStore';
 
 // --- Types ---
 
 interface AppHeaderProps {
-  goal?: string;
   theme?: 'light' | 'dark';
-  onGoalEdit?: () => void;
   onNewSession?: () => void;
   onToggleTheme?: () => void;
   onOpenSettings?: () => void;
@@ -18,12 +17,18 @@ interface AppHeaderProps {
 
 // --- Component ---
 
-export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme, onOpenSettings }: AppHeaderProps) {
+export function AppHeader({ theme, onNewSession, onToggleTheme, onOpenSettings }: AppHeaderProps) {
   const isInspectMode = useInspectStore((s) => s.isInspectMode);
   const toggleInspectMode = useInspectStore((s) => s.toggleInspectMode);
   const isHighlightMode = useInspectStore((s) => s.isHighlightMode);
   const toggleHighlightMode = useInspectStore((s) => s.toggleHighlightMode);
   const hasApiKey = useSettingsStore((s) => s.openaiApiKey.length > 0);
+  const isAnnotationMode = useUserAnnotationStore((s) => s.isAnnotationMode);
+  const toggleAnnotationMode = useUserAnnotationStore((s) => s.toggleAnnotationMode);
+  const activeTool = useUserAnnotationStore((s) => s.activeTool);
+  const setActiveTool = useUserAnnotationStore((s) => s.setActiveTool);
+  const selectedLevel = useUserAnnotationStore((s) => s.selectedLevel);
+  const setSelectedLevel = useUserAnnotationStore((s) => s.setSelectedLevel);
 
   return (
     <header className="flex h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900">
@@ -31,12 +36,6 @@ export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme
         <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">
           CoWriThink
         </h1>
-
-        {goal && (
-          <div className="ml-4 flex-1">
-            <GoalDisplay goal={goal} onEdit={onGoalEdit} />
-          </div>
-        )}
 
         <div className="ml-4 flex shrink-0 items-center gap-2">
           <button
@@ -62,6 +61,70 @@ export function AppHeader({ goal, theme, onGoalEdit, onNewSession, onToggleTheme
               />
             </span>
           </button>
+          <button
+            onClick={toggleAnnotationMode}
+            className={
+              isAnnotationMode
+                ? 'rounded-lg border border-orange-300 bg-orange-50 px-2 py-1 text-xs text-orange-700 transition-colors hover:bg-orange-100 dark:border-orange-600 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50'
+                : 'rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'
+            }
+            title="Annotate AI dependency"
+            aria-label={isAnnotationMode ? 'Exit annotation mode' : 'Enter annotation mode'}
+            aria-pressed={isAnnotationMode}
+          >
+            <span className="flex items-center gap-1">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+              Annotate
+            </span>
+          </button>
+          {isAnnotationMode && (
+            <div className="flex items-center gap-0.5 rounded-md border border-orange-200 bg-orange-50/50 p-0.5 dark:border-orange-800 dark:bg-orange-900/20">
+              {([1, 2, 3] as AnnotationLevel[]).map((lvl) => {
+                const isActive = activeTool === 'highlight' && selectedLevel === lvl;
+                return (
+                  <button
+                    key={lvl}
+                    onClick={() => setSelectedLevel(lvl)}
+                    className={
+                      isActive
+                        ? 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-200 text-orange-800 dark:bg-orange-800 dark:text-orange-200'
+                        : 'rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-orange-100 dark:text-gray-400 dark:hover:bg-orange-900/40'
+                    }
+                    title={ANNOTATION_LEVEL_LABELS[lvl]}
+                    aria-label={ANNOTATION_LEVEL_LABELS[lvl]}
+                    aria-pressed={isActive}
+                  >
+                    <span className="flex items-center gap-0.5">
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: `rgba(251, 146, 60, ${0.2 + lvl * 0.2})` }}
+                      />
+                      <span className="hidden sm:inline">{ANNOTATION_LEVEL_LABELS[lvl]}</span>
+                    </span>
+                  </button>
+                );
+              })}
+              <span className="mx-0.5 h-3 w-px bg-orange-200 dark:bg-orange-700" />
+              <button
+                onClick={() => setActiveTool('eraser')}
+                className={
+                  activeTool === 'eraser'
+                    ? 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-200 text-orange-800 dark:bg-orange-800 dark:text-orange-200'
+                    : 'rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-orange-100 dark:text-gray-400 dark:hover:bg-orange-900/40'
+                }
+                title="Eraser"
+                aria-label="Use eraser tool"
+                aria-pressed={activeTool === 'eraser'}
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13.8 2.4c.8-.8 2-.8 2.8 0L21 6.8c.8.8.8 2 0 2.8L11 20"/>
+                </svg>
+              </button>
+            </div>
+          )}
           <button
             onClick={toggleInspectMode}
             className={
