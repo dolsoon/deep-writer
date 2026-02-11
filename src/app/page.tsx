@@ -74,12 +74,20 @@ export default function Home() {
     }
   }, [loadFromStorage]);
 
-  // Auto-open settings modal if no API key is configured
+  // Auto-open settings modal only if no client key AND no server key
   useEffect(() => {
     const apiKey = useSettingsStore.getState().openaiApiKey;
-    if (!apiKey) {
-      setShowSettings(true);
-    }
+    if (apiKey) return;
+    fetch('/api/health')
+      .then((res) => res.json())
+      .then((data: { hasServerKey?: boolean }) => {
+        if (!data.hasServerKey) {
+          setShowSettings(true);
+        }
+      })
+      .catch(() => {
+        setShowSettings(true);
+      });
   }, []);
 
   // Goal submission handler

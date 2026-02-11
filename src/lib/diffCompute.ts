@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import type { EditorState } from '@tiptap/pm/state';
 import type { DiffEntry } from '@/types';
-import { diffChars, diffWords } from 'diff';
+import { diffChars } from 'diff';
 
 // --- Types ---
 
@@ -17,6 +17,93 @@ export interface DiffViewData {
   modifiedHighlights: DiffHighlight[];
 }
 
+// --- Word-level diff with position tracking (LCS-based, matching tooltip behavior) ---
+
+interface WordToken {
+  word: string;
+  from: number;
+  to: number;
+}
+
+function tokenizeWithPositions(text: string): WordToken[] {
+  const tokens: WordToken[] = [];
+  const regex = /\S+/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    tokens.push({ word: match[0], from: match.index, to: match.index + match[0].length });
+  }
+  return tokens;
+}
+
+function computeWordDiffHighlights(
+  originalText: string,
+  replacementText: string,
+): { origHL: DiffHighlight[]; modHL: DiffHighlight[] } {
+  const origTokens = tokenizeWithPositions(originalText);
+  const modTokens = tokenizeWithPositions(replacementText);
+  const m = origTokens.length;
+  const n = modTokens.length;
+
+  // LCS table (case-insensitive, same as tooltip's computeWordDiff)
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0),
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (origTokens[i - 1].word.toLowerCase() === modTokens[j - 1].word.toLowerCase()) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Backtrack to find removed/added word indices
+  const removedIdx: number[] = [];
+  const addedIdx: number[] = [];
+  let i = m;
+  let j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && origTokens[i - 1].word.toLowerCase() === modTokens[j - 1].word.toLowerCase()) {
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      addedIdx.push(j - 1);
+      j--;
+    } else {
+      removedIdx.push(i - 1);
+      i--;
+    }
+  }
+
+  // Convert to position-based highlights, merging adjacent tokens
+  removedIdx.sort((a, b) => a - b);
+  addedIdx.sort((a, b) => a - b);
+
+  const origHL: DiffHighlight[] = [];
+  for (const idx of removedIdx) {
+    const t = origTokens[idx];
+    const last = origHL[origHL.length - 1];
+    if (last && last.to >= t.from) {
+      last.to = t.to;
+    } else {
+      origHL.push({ from: t.from, to: t.to });
+    }
+  }
+
+  const modHL: DiffHighlight[] = [];
+  for (const idx of addedIdx) {
+    const t = modTokens[idx];
+    const last = modHL[modHL.length - 1];
+    if (last && last.to >= t.from) {
+      last.to = t.to;
+    } else {
+      modHL.push({ from: t.from, to: t.to });
+    }
+  }
+
+  return { origHL, modHL };
+}
+
 // --- Compute diff views for split panels ---
 
 export function computeDiffViews(
@@ -27,7 +114,6 @@ export function computeDiffViews(
 
   const sorted = [...pendingDiffs].sort((a, b) => a.position - b.position);
   const { tr } = editorState;
-  // Mark this transaction as programmatic to prevent automatic mark fixing
   tr.setMeta('programmaticTextState', true);
   tr.setMeta('previewOnly', true);
   const markType = editorState.schema.marks.textState;
@@ -39,32 +125,19 @@ export function computeDiffViews(
     const from = tr.mapping.map(diff.position);
     const to = tr.mapping.map(diff.position + diff.originalText.length);
 
-    // Check if positions are valid
     if (from < 0 || to > tr.doc.content.size || from > to) {
-      continue; // Skip invalid diff
+      continue;
     }
 
-    // Compute word-level diff between original and replacement
-    const wordChanges = diffWords(diff.originalText, diff.replacementText);
+    // Word-level diff with position tracking (LCS-based, same as tooltip)
+    const { origHL, modHL } = computeWordDiffHighlights(diff.originalText, diff.replacementText);
 
-    // Original-side highlights: only mark removed words
-    let origOffset = 0;
-    for (const change of wordChanges) {
-      if (change.removed) {
-        originalHighlights.push({
-          from: diff.position + origOffset,
-          to: diff.position + origOffset + change.value.length,
-        });
-      }
-      if (!change.added) {
-        origOffset += change.value.length;
-      }
+    for (const hl of origHL) {
+      originalHighlights.push({ from: diff.position + hl.from, to: diff.position + hl.to });
     }
 
-    // Apply replacement to build modified document
     tr.insertText(diff.replacementText, from, to);
 
-    // Apply ai-generated mark with roundId so modified editor carries proper marks
     if (markType && diff.roundId) {
       tr.addMark(
         from,
@@ -73,18 +146,8 @@ export function computeDiffViews(
       );
     }
 
-    // Modified-side highlights: only mark added words
-    let modOffset = 0;
-    for (const change of wordChanges) {
-      if (change.added) {
-        modifiedHighlights.push({
-          from: from + modOffset,
-          to: from + modOffset + change.value.length,
-        });
-      }
-      if (!change.removed) {
-        modOffset += change.value.length;
-      }
+    for (const hl of modHL) {
+      modifiedHighlights.push({ from: from + hl.from, to: from + hl.to });
     }
   }
 
