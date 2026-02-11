@@ -263,13 +263,19 @@ export function useGeneration() {
           );
         }
       } else {
-        // Fallback: entire document as single diff (position 1 = first text position)
-        console.warn('[FALLBACK] Using entire document as single diff');
+        // Fallback: entire document as single diff.
+        // Use actual ProseMirror positions instead of relying on text length,
+        // because plain-text length may not match PM position span.
+        const docSize = editor.state.doc.content.size;
+        const firstPos = 1; // first content position inside the first block
+        const endPos = Math.max(firstPos, docSize - 1); // last content position before doc closing
+        console.warn('[FALLBACK] Using entire document as single diff, range:', firstPos, '-', endPos);
         useEditorStore.getState().addDiff(
           originalText,
           response.editedDocument,
-          1,
+          firstPos,
           round.roundId,
+          endPos,
         );
       }
 

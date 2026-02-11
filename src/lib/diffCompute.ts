@@ -123,9 +123,13 @@ export function computeDiffViews(
 
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
-    const to = tr.mapping.map(diff.position + diff.originalText.length);
+    // Use explicit endPosition if available; otherwise calculate from text length
+    const rawTo = diff.endPosition !== undefined
+      ? tr.mapping.map(diff.endPosition)
+      : tr.mapping.map(diff.position + diff.originalText.length);
+    const to = Math.min(rawTo, tr.doc.content.size);
 
-    if (from < 0 || to > tr.doc.content.size || from > to) {
+    if (from < 0 || from > to) {
       continue;
     }
 
@@ -174,7 +178,10 @@ export function applyAllDiffs(
 
   for (const diff of sorted) {
     const from = tr.mapping.map(diff.position);
-    const to = tr.mapping.map(diff.position + diff.originalText.length);
+    const rawTo = diff.endPosition !== undefined
+      ? tr.mapping.map(diff.endPosition)
+      : tr.mapping.map(diff.position + diff.originalText.length);
+    const to = Math.min(rawTo, tr.doc.content.size);
     tr.insertText(diff.replacementText, from, to);
 
     // Apply ai-generated mark with roundId to the replacement text

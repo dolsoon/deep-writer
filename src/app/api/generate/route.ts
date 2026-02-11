@@ -182,7 +182,9 @@ function validateRequest(body: unknown): body is GenerateRequest {
   if (!body || typeof body !== 'object') return false;
   const req = body as Record<string, unknown>;
 
-  if (typeof req.goal !== 'string' || req.goal.length === 0) return false;
+  if (typeof req.goal !== 'string') return false;
+  // Smart-edit mode uses userRequest as intent, so empty goal is allowed
+  if (req.mode !== 'smart-edit' && req.goal.length === 0) return false;
   if (typeof req.document !== 'string') return false;
   if (!Array.isArray(req.gaps)) return false;
   if (!Array.isArray(req.constraints)) return false;
@@ -223,12 +225,19 @@ export async function POST(request: NextRequest) {
 
   const generateRequest = body as GenerateRequest;
 
-  // Calculate max tokens based on gap sizes and mode
-  const totalGapChars = generateRequest.gaps.reduce(
-    (sum, gap) => sum + gap.originalText.length,
-    0,
-  );
-  const maxTokens = Math.max(1024, Math.min(4096, Math.ceil(totalGapChars * 3)));
+  // Calculate max tokens based on mode
+  let maxTokens: number;
+  if (generateRequest.mode === 'smart-edit') {
+    // Smart-edit returns the full edited document, so base on document + request length
+    const docChars = generateRequest.document.length + (generateRequest.userRequest?.length ?? 0);
+    maxTokens = Math.max(2048, Math.min(4096, Math.ceil(docChars * 1.5)));
+  } else {
+    const totalGapChars = generateRequest.gaps.reduce(
+      (sum, gap) => sum + gap.originalText.length,
+      0,
+    );
+    maxTokens = Math.max(1024, Math.min(4096, Math.ceil(totalGapChars * 3)));
+  }
 
   // Build prompt
   const userPrompt = buildUserPrompt(generateRequest);

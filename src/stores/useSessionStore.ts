@@ -51,7 +51,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       relianceScores: [],
       createdAt: now,
       lastModifiedAt: now,
-      documentState: { type: 'doc', content: [] },
+      documentState: { type: 'doc', content: [{ type: 'paragraph' }] },
     };
 
     setActiveSessionId(session.id);
