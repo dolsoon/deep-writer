@@ -10,6 +10,8 @@
   - Rationale displayed permanently below each suggestion (no hover needed)
   - Scrollable tooltip with always-visible scrollbar + sticky Regenerate button
   - Pre-fetch alternatives on text selection for instant tooltip loading (`CoWriThinkEditor.tsx`, `useAlternatives.ts`)
+  - Background pre-fetch sentence/paragraph alternatives on tooltip open — all 3 levels cached before user switches tabs (`AlternativesTooltip.tsx`, `getRangeForLevel`)
+  - Zero-frame instant display: `displayAlts` initialized directly from prefetch data (no loading skeleton flash)
   - Inline flash highlight (green fade-out) on applied text via `FlashHighlightPlugin.ts`
 
 ### Promptbox Regeneration
@@ -88,9 +90,12 @@
 
 ## 5. Basic UI Changes
 
-- [ ] 초기 진입 시 "task want to write" 입력 + 시작 모드 선택 UI 제거
-- [ ] New Session 버튼 클릭 시 확인 다이얼로그 추가 ("정말 지우시겠습니까?")
-- [ ] 제목 입력 UI 제거
+- [x] 초기 진입 시 "task want to write" 입력 + 시작 모드 선택 UI 제거
+  - Removed `GoalModal` and `StartModeSelector` from `page.tsx`; app skips directly to editor on mount
+- [x] New Session 버튼 클릭 시 확인 다이얼로그 추가 ("정말 지우시겠습니까?")
+  - Confirmation dialog added in `page.tsx` with `showNewSessionConfirm` state
+- [x] 제목 입력 UI 제거
+  - `GoalDisplay` component and `goal`/`onGoalEdit` props removed from `AppHeader.tsx`
 
 ---
 
@@ -103,10 +108,15 @@
 
 ## 7. AI Dependency Highlighting
 
-- [ ] 상단 toolbar에 "AI 의존 하이라이팅" 버튼 추가 (눈알 버튼 옆에 배치)
-- [ ] 버튼 클릭 시 유저가 AI 의존도가 높다고 생각하는 부분을 하이라이팅 가능
-- [ ] 여러 번 하이라이팅하면 색상 강도 증가
-- [ ] 지우개 도구로 기존 하이라이팅 제거 가능
+- [x] 상단 toolbar에 "AI 의존 하이라이팅" 버튼 추가 (눈알 버튼 옆에 배치)
+- [x] 버튼 클릭 시 유저가 AI 의존도가 높다고 생각하는 부분을 하이라이팅 가능
+- [x] ~~여러 번 하이라이팅하면 색상 강도 증가~~ → 3-level 선택 방식으로 변경 (Slightly AI / Moderately AI / Mostly AI)
+  - `UserAnnotationPlugin.ts`: intensity 필드를 level (1|2|3)로 교체, 페인팅 시 선택된 레벨로 덮어쓰기 (기존 increment 방식 제거)
+  - `useUserAnnotationStore.ts`: `selectedLevel` 상태 + `setSelectedLevel()` 액션 추가, `AnnotationLevel` 타입 및 `ANNOTATION_LEVEL_LABELS` 내보내기
+  - `AppHeader.tsx`: highlight/eraser 토글 → 3개 레벨 버튼 (색상 swatch 포함) + eraser 버튼으로 교체
+  - `CoWriThinkEditor.tsx`: `annotationLevel` store→plugin 동기화 useEffect 추가
+  - `globals.css`: 5단계 → 3단계 CSS (15%/35%/55% opacity)
+- [x] 지우개 도구로 기존 하이라이팅 제거 가능
 - [ ] 하이라이팅 완료 후 눈알 버튼으로 실제 AI 의존도와 비교
 
 ---
@@ -124,3 +134,14 @@
   - Fix 1: `useSessionStore.ts` — 초기 documentState에 빈 paragraph 포함 (`content: [{ type: 'paragraph' }]`)
   - Fix 2: `api/generate/route.ts` — smart-edit 모드에서 빈 goal 허용 (userRequest가 의도를 담으므로)
   - Fix 3: `api/generate/route.ts` — smart-edit 모드에서 maxTokens를 문서+요청 길이 기반 최소 2048로 계산 (기존: gap 기반 1024 고정)
+
+---
+
+## 10. Inspect Mode - Category Hover Visualization
+
+- [ ] InspectPanel의 각 dimension chip (Wording/Concept/Evaluation)에 hover 시:
+  - [ ] 에디터 텍스트가 해당 dimension 점수 기준으로 re-coloring (composite -> single dimension)
+  - [ ] InspectPanel 내 해당 dimension의 상세 breakdown 정보 표시
+- [ ] Document-level view와 Segment-level view 모두에서 작동
+- [ ] 각 dimension별 고유 색상 계열 사용 (예: Wording=blue계열, Concept=green계열, Evaluation=orange계열)
+- [ ] hover 해제 시 기존 composite score 기반 coloring으로 복원

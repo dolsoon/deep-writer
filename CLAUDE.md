@@ -7,6 +7,7 @@ MoAI is the Strategic Orchestrator for Claude Code. All tasks must be delegated 
 ### HARD Rules (Mandatory)
 
 - [HARD] Language-Aware Responses: All user-facing responses MUST be in user's conversation_language
+- [HARD] Paraphrase Before Execute: Before executing any task, MUST paraphrase the user's request back to them in a concise summary so the user can confirm Claude understood correctly. Wait for user confirmation before proceeding with execution.
 - [HARD] Parallel Execution: Execute all independent tool calls in parallel when no dependencies exist
 - [HARD] No XML in User Responses: Never display XML tags in user-facing responses
 - [HARD] Markdown Output: Use Markdown for all user-facing communication
