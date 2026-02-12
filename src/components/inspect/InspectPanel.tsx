@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import type { Editor } from '@tiptap/react';
 import type { SelectedSegment, Dimension } from '@/types/contribution';
 import { useInspectStore } from '@/stores/useInspectStore';
@@ -143,6 +143,7 @@ export interface InspectPanelProps {
 
 export function InspectPanel({ editor }: InspectPanelProps) {
   const { selectedSegment, clearSelectedSegment } = useInspectStore();
+  const comparisonView = useInspectStore((s) => s.comparisonView);
   const documentScores = useDocumentScores(editor);
   const getAncestryChain = useRoundStore((s) => s.getAncestryChain);
 
@@ -152,7 +153,19 @@ export function InspectPanel({ editor }: InspectPanelProps) {
 
   const hasSelection = selectedSegment !== null;
 
-  const annotationRanges = useMemo(() => getAnnotationRanges(editor), [editor]);
+  const [annotationVersion, setAnnotationVersion] = useState(0);
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => setAnnotationVersion((v) => v + 1);
+    editor.on('transaction', handler);
+    return () => { editor.off('transaction', handler); };
+  }, [editor]);
+
+  const annotationRanges = useMemo(
+    () => getAnnotationRanges(editor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, annotationVersion],
+  );
   const hasAnnotations = annotationRanges.length > 0;
 
   const comparison = useMemo(() => {
@@ -181,8 +194,13 @@ export function InspectPanel({ editor }: InspectPanelProps) {
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {!hasSelection ? (
           <>
+            {comparisonView === 'user' && comparison && (
+              <PerceptionComparison comparison={comparison} />
+            )}
             <DocumentLevelView scores={documentScores} />
-            {comparison && <PerceptionComparison comparison={comparison} />}
+            {comparisonView !== 'user' && comparison && (
+              <PerceptionComparison comparison={comparison} />
+            )}
           </>
         ) : (
           <SegmentView

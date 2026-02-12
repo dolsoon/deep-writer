@@ -570,7 +570,7 @@ export function AlternativesTooltip({
                 </button>
               ) : (
                 /* Word/Sentence: full annotatable text + Apply button */
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'stretch', gap: '6px' }}>
                   <div style={{ flex: 1 }}>
                     {alt.label && (
                       <span className="alternatives-tooltip-item-label">{alt.label}</span>

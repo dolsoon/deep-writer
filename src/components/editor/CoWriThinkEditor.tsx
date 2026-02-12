@@ -27,6 +27,8 @@ import {
   deactivateAnnotationMode,
   setAnnotationTool,
   setAnnotationLevel,
+  showAnnotationDecorations,
+  getAnnotationRanges,
 } from '@/extensions/UserAnnotationPlugin';
 import { InspectClickPlugin } from '@/extensions/InspectClickPlugin';
 import { DeletionMarkerPlugin } from '@/extensions/DeletionMarkerPlugin';
@@ -131,6 +133,7 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
     const isHighlightMode = useInspectStore((s) => s.isHighlightMode);
     const hoveredDimension = useInspectStore((s) => s.hoveredDimension);
     const graphNodeCount = useContributionGraphStore((s) => s.nodes.size);
+    const comparisonView = useInspectStore((s) => s.comparisonView);
     const isAnnotationMode = useUserAnnotationStore((s) => s.isAnnotationMode);
     const annotationTool = useUserAnnotationStore((s) => s.activeTool);
     const annotationLevel = useUserAnnotationStore((s) => s.selectedLevel);
@@ -397,25 +400,38 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
       if (!editor) return;
       // Suppress overlay during active diff review (REQ-VIS-026)
       const hasPending = useEditorStore.getState().activeDiffs.some((d) => d.state === 'pending');
-      const shouldActivate = (isInspectMode || isHighlightMode) && !hasPending;
+      const shouldActivate = (isInspectMode || isHighlightMode) && !hasPending && !(isHighlightMode && comparisonView === 'user');
       const scoreAccessor: ScoreAccessor = (roundId, dimension) =>
         useContributionGraphStore.getState().accumulatedScore(roundId, dimension);
       updateContributionOverlay(editor, shouldActivate, scoreAccessor);
-    }, [editor, isInspectMode, isHighlightMode, activeDiffs]);
+    }, [editor, isInspectMode, isHighlightMode, activeDiffs, comparisonView]);
+
+    // Sync comparison view: show/hide annotation decorations overlay
+    useEffect(() => {
+      if (!editor || !isHighlightMode) {
+        if (editor) showAnnotationDecorations(editor, false);
+        return;
+      }
+      if (comparisonView === 'user') {
+        showAnnotationDecorations(editor, true);
+      } else {
+        showAnnotationDecorations(editor, false);
+      }
+    }, [editor, comparisonView, isHighlightMode]);
 
     // Refresh contribution overlay when graph scores update
     useEffect(() => {
-      if (!editor || !(isInspectMode || isHighlightMode)) return;
+      if (!editor || !(isInspectMode || isHighlightMode) || (isHighlightMode && comparisonView === 'user')) return;
       const scoreAccessor: ScoreAccessor = (roundId, dimension) =>
         useContributionGraphStore.getState().accumulatedScore(roundId, dimension);
       refreshContributionScores(editor, scoreAccessor);
-    }, [editor, isInspectMode, isHighlightMode, graphNodeCount]);
+    }, [editor, isInspectMode, isHighlightMode, graphNodeCount, comparisonView]);
 
     // Sync dimension hover to contribution decoration plugin
     useEffect(() => {
-      if (!editor || !isInspectMode) return;
+      if (!editor || !isInspectMode || comparisonView === 'user') return;
       updateDimensionHover(editor, hoveredDimension);
-    }, [editor, isInspectMode, hoveredDimension]);
+    }, [editor, isInspectMode, hoveredDimension, comparisonView]);
 
     // Sync annotation mode to plugin
     useEffect(() => {
@@ -439,6 +455,32 @@ export const CoWriThinkEditor = forwardRef<CoWriThinkEditorHandle, CoWriThinkEdi
       if (!editor || !isAnnotationMode) return;
       setAnnotationLevel(editor, annotationLevel);
     }, [editor, isAnnotationMode, annotationLevel]);
+
+    // Auto-switch to user view when entering annotation mode with highlight on
+    useEffect(() => {
+      if (isAnnotationMode && isHighlightMode && comparisonView === 'actual') {
+        useInspectStore.getState().setComparisonView('user');
+      }
+    }, [isAnnotationMode, isHighlightMode, comparisonView]);
+
+    // Sync hasAnnotations flag to store
+    useEffect(() => {
+      if (!editor) return;
+      const handler = () => {
+        const ranges = getAnnotationRanges(editor);
+        const has = ranges.length > 0;
+        const current = useUserAnnotationStore.getState().hasAnnotations;
+        if (has !== current) {
+          useUserAnnotationStore.getState().setHasAnnotations(has);
+          // Reset comparison view when annotations are cleared
+          if (!has && useInspectStore.getState().comparisonView === 'user') {
+            useInspectStore.getState().setComparisonView('actual');
+          }
+        }
+      };
+      editor.on('transaction', handler);
+      return () => { editor.off('transaction', handler); };
+    }, [editor]);
 
     return (
       <div

@@ -6,7 +6,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 // --- Plugin Key ---
 
-const userAnnotationPluginKey = new PluginKey('userAnnotation');
+export const userAnnotationPluginKey = new PluginKey('userAnnotation');
 
 // --- Types ---
 
@@ -25,6 +25,7 @@ interface AnnotationPluginState {
   isPainting: boolean;
   paintStart: number | null;
   paintEnd: number | null;
+  forceShow: boolean;
 }
 
 // --- Constants ---
@@ -191,6 +192,7 @@ export const UserAnnotationPlugin = Extension.create({
               isPainting: false,
               paintStart: null,
               paintEnd: null,
+              forceShow: false,
             };
           },
 
@@ -198,6 +200,17 @@ export const UserAnnotationPlugin = Extension.create({
             const meta = tr.getMeta(userAnnotationPluginKey);
 
             if (meta) {
+              if (meta.forceShow !== undefined) {
+                const show = meta.forceShow;
+                return {
+                  ...value,
+                  forceShow: show,
+                  decorations: show
+                    ? buildDecorations(newState.doc, value.ranges)
+                    : (value.isActive ? buildDecorations(newState.doc, value.ranges) : DecorationSet.empty),
+                };
+              }
+
               if (meta.activate !== undefined) {
                 const isActive = meta.activate;
                 const tool = meta.tool ?? value.tool;
@@ -210,7 +223,7 @@ export const UserAnnotationPlugin = Extension.create({
                   isPainting: false,
                   paintStart: null,
                   paintEnd: null,
-                  decorations: isActive
+                  decorations: (isActive || value.forceShow)
                     ? buildDecorations(newState.doc, value.ranges)
                     : DecorationSet.empty,
                 };
@@ -283,7 +296,7 @@ export const UserAnnotationPlugin = Extension.create({
               return {
                 ...value,
                 ranges: newRanges,
-                decorations: value.isActive
+                decorations: (value.isActive || value.forceShow)
                   ? buildDecorations(newState.doc, newRanges)
                   : DecorationSet.empty,
               };
@@ -454,4 +467,12 @@ export function getAnnotationRanges(editor: Editor): AnnotationRange[] {
     | AnnotationPluginState
     | undefined;
   return pluginState?.ranges ?? [];
+}
+
+export function showAnnotationDecorations(editor: Editor, show: boolean): void {
+  editor.view.dispatch(
+    editor.view.state.tr.setMeta(userAnnotationPluginKey, {
+      forceShow: show,
+    }),
+  );
 }

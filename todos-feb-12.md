@@ -39,6 +39,11 @@
 - [x] 한 번 더 클릭 시 keep/delete로 토글 전환되는 UX
   - `secondClickConvert()` in `AnnotatableText.tsx`: positive -> keep, negative -> delete, keep/delete -> remove
 
+### Apply Button
+- [x] Apply 버튼 높이를 각 suggestion 영역 전체에 맞추어 확대
+  - `AlternativesTooltip.tsx`: flex container `alignItems: 'flex-start'` → `'stretch'`로 변경
+  - `globals.css`: `.alternatives-tooltip-apply-btn`에 `display: flex; align-items: center` 추가, padding 조정
+
 ### Selective Regeneration
 - [ ] 특정 suggestion에 mark(positive/negative) 후 "regenerate" 클릭 시, mark된 suggestion만 재생성하고 나머지는 유지
 
@@ -117,7 +122,13 @@
   - `CoWriThinkEditor.tsx`: `annotationLevel` store→plugin 동기화 useEffect 추가
   - `globals.css`: 5단계 → 3단계 CSS (15%/35%/55% opacity)
 - [x] 지우개 도구로 기존 하이라이팅 제거 가능
-- [ ] 하이라이팅 완료 후 눈알 버튼으로 실제 AI 의존도와 비교
+- [x] 하이라이팅 완료 후 "Actual AI" / "Your View" 토글로 실제 AI 의존도와 비교
+  - `useInspectStore.ts`: `comparisonView` 상태 (`'actual' | 'user'`) 및 `setComparisonView`/`toggleComparisonView` 액션 추가
+  - `useUserAnnotationStore.ts`: `hasAnnotations` 플래그 추가 (annotation 존재 여부 추적)
+  - `AppHeader.tsx`: highlight 모드 + annotation 존재 시 "Actual AI" / "Your View" 토글 버튼 표시
+  - `CoWriThinkEditor.tsx`: comparisonView에 따라 contribution overlay와 annotation decoration 전환, annotation 모드 진입 시 자동 user view 전환
+  - `UserAnnotationPlugin.ts`: `forceShow` 메타 + `showAnnotationDecorations()` 헬퍼 추가
+  - `InspectPanel.tsx`: user view일 때 PerceptionComparison을 상단에 배치, annotation 실시간 반영을 위한 transaction listener 추가
 
 ---
 
@@ -134,6 +145,15 @@
   - Fix 1: `useSessionStore.ts` — 초기 documentState에 빈 paragraph 포함 (`content: [{ type: 'paragraph' }]`)
   - Fix 2: `api/generate/route.ts` — smart-edit 모드에서 빈 goal 허용 (userRequest가 의도를 담으므로)
   - Fix 3: `api/generate/route.ts` — smart-edit 모드에서 maxTokens를 문서+요청 길이 기반 최소 2048로 계산 (기존: gap 기반 1024 고정)
+
+- [x] Chat smart-edit 시 사소한 변경만 발생하고 실질적 편집이 되지 않는 문제 수정
+  - 근본 원인 1: Chat API가 "edit" OR "chat" 택일 방식 → edit일 때 간단한 확인 메시지만 반환
+  - 근본 원인 2: Smart-edit 시스템 프롬프트가 "COMPLETE" 강조 → AI가 원문 보존 편향
+  - 근본 원인 3: 잘림 방지 가드(30% 미만 거부)가 축약 요청의 정상적 결과를 차단
+  - Fix 1: `api/chat/route.ts` — 파이프라인을 "항상 chat 응답 + 선택적 edit" 방식으로 변경 (`{ reply, shouldEdit }`)
+  - Fix 2: `api/generate/route.ts` — Smart-edit 프롬프트 강화 (편집 유형별 구체적 가이드 추가)
+  - Fix 3: `api/generate/route.ts` — 축약 요청 시 잘림 가드 완화 (30% → 5%)
+  - Fix 4: `useChat.ts`, `useChatStore.ts`, `ChatPanel.tsx` — 새 API 포맷 소비하도록 업데이트
 
 ---
 

@@ -772,7 +772,9 @@
 /* Apply button per alternative */
 .alternatives-tooltip-apply-btn {
   flex-shrink: 0;
-  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 4px;
   background: transparent;

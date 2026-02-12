@@ -14,12 +14,14 @@ interface UserAnnotationState {
   isAnnotationMode: boolean;
   activeTool: 'highlight' | 'eraser';
   selectedLevel: AnnotationLevel;
+  hasAnnotations: boolean;
 }
 
 interface UserAnnotationActions {
   toggleAnnotationMode: () => void;
   setActiveTool: (tool: 'highlight' | 'eraser') => void;
   setSelectedLevel: (level: AnnotationLevel) => void;
+  setHasAnnotations: (has: boolean) => void;
 }
 
 type UserAnnotationStore = UserAnnotationState & UserAnnotationActions;
@@ -30,6 +32,7 @@ export const useUserAnnotationStore = create<UserAnnotationStore>()((set) => ({
   isAnnotationMode: false,
   activeTool: 'highlight',
   selectedLevel: 2,
+  hasAnnotations: false,
 
   toggleAnnotationMode: () => {
     set((state) => ({
@@ -44,5 +47,9 @@ export const useUserAnnotationStore = create<UserAnnotationStore>()((set) => ({
 
   setSelectedLevel: (level) => {
     set({ selectedLevel: level, activeTool: 'highlight' });
+  },
+
+  setHasAnnotations: (has) => {
+    set({ hasAnnotations: has });
   },
 }));

@@ -4,11 +4,14 @@ import type { Dimension } from '@/types/contribution';
 
 // --- Types ---
 
+export type ComparisonView = 'actual' | 'user';
+
 interface InspectState {
   isInspectMode: boolean;
   isHighlightMode: boolean;
   selectedSegment: SelectedSegment | null;
   hoveredDimension: Dimension | null;
+  comparisonView: ComparisonView;
 }
 
 interface InspectActions {
@@ -18,6 +21,8 @@ interface InspectActions {
   clearSelectedSegment: () => void;
   setHoveredDimension: (dim: Dimension | null) => void;
   clearHoveredDimension: () => void;
+  setComparisonView: (view: ComparisonView) => void;
+  toggleComparisonView: () => void;
 }
 
 type InspectStore = InspectState & InspectActions;
@@ -29,6 +34,7 @@ export const useInspectStore = create<InspectStore>()((set) => ({
   isHighlightMode: false,
   selectedSegment: null,
   hoveredDimension: null,
+  comparisonView: 'actual' as ComparisonView,
 
   toggleInspectMode: () => {
     set((state) => ({
@@ -39,7 +45,10 @@ export const useInspectStore = create<InspectStore>()((set) => ({
   },
 
   toggleHighlightMode: () => {
-    set((state) => ({ isHighlightMode: !state.isHighlightMode }));
+    set((state) => ({
+      isHighlightMode: !state.isHighlightMode,
+      comparisonView: !state.isHighlightMode ? state.comparisonView : 'actual',
+    }));
   },
 
   setSelectedSegment: (segment) => {
@@ -56,5 +65,15 @@ export const useInspectStore = create<InspectStore>()((set) => ({
 
   clearHoveredDimension: () => {
     set({ hoveredDimension: null });
+  },
+
+  setComparisonView: (view) => {
+    set({ comparisonView: view });
+  },
+
+  toggleComparisonView: () => {
+    set((state) => ({
+      comparisonView: state.comparisonView === 'actual' ? 'user' : 'actual',
+    }));
   },
 }));
