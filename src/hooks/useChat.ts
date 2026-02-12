@@ -43,23 +43,23 @@ export function useChat(
         );
       }
 
-      const data = await response.json() as { intent: 'chat' | 'edit'; reply: string };
+      const data = await response.json() as { reply: string; shouldEdit: boolean };
 
       // Add assistant reply to chat
-      store.addAssistantMessage(data.reply, data.intent);
+      store.addAssistantMessage(data.reply, data.shouldEdit);
       store.setLoading(false);
 
       // If edit intent, trigger smart-edit pipeline.
       // Smart-edit mode compares original vs edited document and creates diffs
       // only for the parts that actually changed.
-      if (data.intent === 'edit' && editor) {
+      if (data.shouldEdit && editor) {
         await generation.smartEditRequest(editor, goal, text);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong.';
       useChatStore.getState().addAssistantMessage(
         `Sorry, ${message} Please try again.`,
-        'chat',
+        false,
       );
       useChatStore.getState().setLoading(false);
     }

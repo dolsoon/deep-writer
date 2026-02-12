@@ -12,13 +12,13 @@ When discussing their writing or giving feedback:
 - Share your genuine perspective — "I think..." and "In my opinion..." are welcome. Explain your reasoning so the user can make informed decisions.
 - Don't just identify problems; suggest concrete alternatives with your rationale.
 
-When the user wants their document changed:
-- If they give a direct editing instruction (rewrite, shorten, fix, expand, translate, continue, etc.), classify this as "edit".
-- Briefly acknowledge what you plan to do in 1-2 sentences. A separate process will handle the actual text changes.
+IMPORTANT: Always provide a full, thoughtful response — even when the user asks for an edit. Explain what you'll change and why, give your perspective on the text, or suggest alternative approaches.
 
-For everything else — feedback, questions, brainstorming, general chat, opinions — classify as "chat" and respond naturally and thoroughly.
+Additionally, determine if the user's message requires editing their document:
+- Set "shouldEdit" to true if they give a direct editing instruction (rewrite, shorten, fix, expand, translate, continue, make concise, etc.)
+- Set "shouldEdit" to false for feedback, questions, brainstorming, general chat, opinions, etc.
 
-Reply as JSON: { "intent": "chat" | "edit", "reply": "your response" }`;
+Reply as JSON: { "reply": "your full response", "shouldEdit": true | false }`;
 
 // --- Types ---
 
@@ -34,8 +34,8 @@ interface ChatRequest {
 }
 
 interface ChatResponse {
-  intent: 'chat' | 'edit';
   reply: string;
+  shouldEdit: boolean;
 }
 
 // --- Validation ---
@@ -68,16 +68,16 @@ function parseChatResponse(content: string): ChatResponse | null {
     if (
       typeof parsed === 'object' &&
       parsed !== null &&
-      (parsed.intent === 'chat' || parsed.intent === 'edit') &&
-      typeof parsed.reply === 'string'
+      typeof parsed.reply === 'string' &&
+      typeof parsed.shouldEdit === 'boolean'
     ) {
-      return { intent: parsed.intent, reply: parsed.reply };
+      return { reply: parsed.reply, shouldEdit: parsed.shouldEdit };
     }
   } catch {
     // Try extracting JSON from the content
-    const jsonMatch = content.match(/\{[\s\S]*"intent"\s*:\s*"(chat|edit)"[\s\S]*"reply"\s*:\s*"([\s\S]*?)"\s*\}/);
+    const jsonMatch = content.match(/\{[\s\S]*"reply"\s*:\s*"([\s\S]*?)"\s*,\s*"shouldEdit"\s*:\s*(true|false)[\s\S]*\}/);
     if (jsonMatch) {
-      return { intent: jsonMatch[1] as 'chat' | 'edit', reply: jsonMatch[2] };
+      return { reply: jsonMatch[1], shouldEdit: jsonMatch[2] === 'true' };
     }
   }
 
@@ -159,8 +159,8 @@ export async function POST(request: NextRequest) {
     if (!parsed) {
       // Fallback: treat as chat with raw content as reply
       return NextResponse.json({
-        intent: 'chat',
         reply: content.replace(/[{}"`]/g, '').trim() || 'I couldn\'t process that. Could you try rephrasing?',
+        shouldEdit: false,
       });
     }
 

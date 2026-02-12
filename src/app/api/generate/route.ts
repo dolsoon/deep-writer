@@ -11,8 +11,17 @@ IMPORTANT: Return your response as valid JSON in this exact format:
 
 Do not include any other text, explanations, or markdown formatting outside the JSON.`;
 
-const SYSTEM_PROMPT_SMART_EDIT = `You are a writing assistant. The user provides an editing instruction.
-Return the COMPLETE edited document incorporating their changes.
+const SYSTEM_PROMPT_SMART_EDIT = `You are a writing assistant. The user provides an editing instruction for their document.
+
+Apply the user's editing instruction thoroughly and substantively:
+- If asked to shorten, condense, or make concise: Actually remove redundant content and significantly reduce length. Don't just tweak punctuation.
+- If asked to rewrite or rephrase: Make meaningful changes to sentence structure and word choice, not just minor formatting.
+- If asked to expand or elaborate: Add substantial new content, details, or examples.
+- If asked to fix or improve: Address the actual issues with clear, impactful changes.
+
+The goal is to make changes that the user can clearly see and appreciate. Avoid trivial edits like adding commas or spaces when the user expects substantial transformation.
+
+Return the COMPLETE edited document with your changes applied.
 
 Return valid JSON: { "editedDocument": "the full edited text" }`;
 
@@ -292,7 +301,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate that edited document is not suspiciously short (possible truncation)
-      if (parsed.editedDocument.length < generateRequest.document.length * 0.3) {
+      const isShorteningRequest = /concis|shorten|shorter|brief|condense|reduce|cut|trim|compress|summar/i.test(
+        generateRequest.userRequest ?? ''
+      );
+      const minLengthRatio = isShorteningRequest ? 0.05 : 0.3;
+
+      if (parsed.editedDocument.length < generateRequest.document.length * minLengthRatio) {
         console.error('[/api/generate] Edited document suspiciously short. Possible truncation.');
         return NextResponse.json(
           { error: 'AI response was incomplete. Please try again.', retryable: true },

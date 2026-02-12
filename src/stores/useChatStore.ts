@@ -8,7 +8,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  intent?: 'chat' | 'edit';
+  shouldEdit?: boolean;
 }
 
 interface ChatState {
@@ -18,7 +18,7 @@ interface ChatState {
 
 interface ChatActions {
   addUserMessage: (content: string) => string;
-  addAssistantMessage: (content: string, intent: 'chat' | 'edit') => string;
+  addAssistantMessage: (content: string, shouldEdit: boolean) => string;
   setLoading: (loading: boolean) => void;
   clearMessages: () => void;
 }
@@ -44,7 +44,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
     return id;
   },
 
-  addAssistantMessage: (content: string, intent: 'chat' | 'edit'): string => {
+  addAssistantMessage: (content: string, shouldEdit: boolean): string => {
     const id = nanoid();
     set((prev) => ({
       messages: [...prev.messages, {
@@ -52,7 +52,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
         role: 'assistant' as const,
         content,
         timestamp: Date.now(),
-        intent,
+        shouldEdit,
       }],
     }));
     return id;

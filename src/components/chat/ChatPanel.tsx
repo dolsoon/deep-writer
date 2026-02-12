@@ -46,7 +46,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
             </ReactMarkdown>
           </div>
         )}
-        {message.intent === 'edit' && (
+        {message.shouldEdit && (
           <span className="mt-1 block text-xs opacity-60">
             Editing document...
           </span>
