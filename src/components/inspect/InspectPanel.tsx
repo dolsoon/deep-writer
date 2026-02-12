@@ -143,7 +143,6 @@ export interface InspectPanelProps {
 
 export function InspectPanel({ editor }: InspectPanelProps) {
   const { selectedSegment, clearSelectedSegment } = useInspectStore();
-  const comparisonView = useInspectStore((s) => s.comparisonView);
   const documentScores = useDocumentScores(editor);
   const getAncestryChain = useRoundStore((s) => s.getAncestryChain);
 
@@ -194,13 +193,8 @@ export function InspectPanel({ editor }: InspectPanelProps) {
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {!hasSelection ? (
           <>
-            {comparisonView === 'user' && comparison && (
-              <PerceptionComparison comparison={comparison} />
-            )}
             <DocumentLevelView scores={documentScores} />
-            {comparisonView !== 'user' && comparison && (
-              <PerceptionComparison comparison={comparison} />
-            )}
+            {comparison && <PerceptionComparison comparison={comparison} />}
           </>
         ) : (
           <SegmentView

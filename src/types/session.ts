@@ -15,6 +15,7 @@ export interface Session {
   // SPEC-CONTRIB-003: Enhanced export fields
   provenanceChain?: RoundMetadata[];
   contributionGraph?: Record<string, RoundNode>;
+  userAnnotations?: Array<{ from: number; to: number; level: number; text?: string }>;
 }
 
 export interface GoalChange {

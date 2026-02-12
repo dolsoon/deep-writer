@@ -29,10 +29,6 @@ export function AppHeader({ theme, onNewSession, onToggleTheme, onOpenSettings }
   const setActiveTool = useUserAnnotationStore((s) => s.setActiveTool);
   const selectedLevel = useUserAnnotationStore((s) => s.selectedLevel);
   const setSelectedLevel = useUserAnnotationStore((s) => s.setSelectedLevel);
-  const comparisonView = useInspectStore((s) => s.comparisonView);
-  const setComparisonView = useInspectStore((s) => s.setComparisonView);
-  const hasAnnotations = useUserAnnotationStore((s) => s.hasAnnotations);
-
   return (
     <header className="flex h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900">
       <div className="flex w-full items-center justify-between">
@@ -64,32 +60,6 @@ export function AppHeader({ theme, onNewSession, onToggleTheme, onOpenSettings }
               />
             </span>
           </button>
-          {isHighlightMode && hasAnnotations && (
-            <div className="flex items-center rounded-md border border-gray-300 p-0.5 dark:border-gray-600">
-              <button
-                onClick={() => setComparisonView('actual')}
-                className={
-                  comparisonView === 'actual'
-                    ? 'rounded px-2 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                    : 'rounded px-2 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-                }
-                aria-pressed={comparisonView === 'actual'}
-              >
-                Actual AI
-              </button>
-              <button
-                onClick={() => setComparisonView('user')}
-                className={
-                  comparisonView === 'user'
-                    ? 'rounded px-2 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
-                    : 'rounded px-2 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-                }
-                aria-pressed={comparisonView === 'user'}
-              >
-                Your View
-              </button>
-            </div>
-          )}
           <button
             onClick={toggleAnnotationMode}
             className={

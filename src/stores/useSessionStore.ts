@@ -11,6 +11,7 @@ import {
 } from '@/lib/storage';
 import { useRoundStore } from '@/stores/useRoundStore';
 import { useContributionGraphStore } from '@/stores/useContributionGraphStore';
+import { useUserAnnotationStore } from '@/stores/useUserAnnotationStore';
 
 // --- Types ---
 
@@ -121,11 +122,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     const contributionGraph = Object.fromEntries(
       useContributionGraphStore.getState().nodes.entries(),
     );
+    const userAnnotations = useUserAnnotationStore.getState().annotationRanges;
 
     return {
       ...session,
       provenanceChain,
       contributionGraph,
+      userAnnotations,
     };
   },
 

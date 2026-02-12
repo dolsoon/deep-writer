@@ -583,9 +583,9 @@
   border-bottom: 2px solid transparent;
 }
 
-/* Highlighter pen cursor inside alternatives tooltip */
+/* Cursor inside alternatives tooltip */
 .alternatives-tooltip .annotatable-word {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 11-6 6v3h9l3-3'/%3E%3Cpath d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4'/%3E%3C/svg%3E") 2 18, pointer;
+  cursor: pointer;
 }
 
 .annotatable-word:hover {
@@ -878,10 +878,7 @@
   background-color: rgba(251, 191, 36, 0.28);
 }
 
-/* Dark mode: Highlighter pen cursor */
-:where(.dark, .dark *) .alternatives-tooltip .annotatable-word {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23a5b4fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 11-6 6v3h9l3-3'/%3E%3Cpath d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4'/%3E%3C/svg%3E") 2 18, pointer;
-}
+/* Dark mode: Cursor inside alternatives tooltip (inherits from light mode) */
 
 :where(.dark, .dark *) .alternatives-tooltip-original {
   border-bottom-color: rgba(255, 255, 255, 0.06);
@@ -1137,26 +1134,62 @@
 
 /* User annotation highlights — 3 levels of perceived AI reliance */
 .user-annotation-1 {
-  background-color: rgba(251, 146, 60, 0.15);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.25) 0px,
+    rgba(251, 146, 60, 0.25) 2px,
+    transparent 2px,
+    transparent 7px
+  );
   border-radius: 2px;
 }
 .user-annotation-2 {
-  background-color: rgba(251, 146, 60, 0.35);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.4) 0px,
+    rgba(251, 146, 60, 0.4) 2px,
+    transparent 2px,
+    transparent 6px
+  );
   border-radius: 2px;
 }
 .user-annotation-3 {
-  background-color: rgba(251, 146, 60, 0.55);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.55) 0px,
+    rgba(251, 146, 60, 0.55) 3px,
+    transparent 3px,
+    transparent 6px
+  );
   border-radius: 2px;
 }
 
 :where(.dark, .dark *) .user-annotation-1 {
-  background-color: rgba(251, 146, 60, 0.18);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.3) 0px,
+    rgba(251, 146, 60, 0.3) 2px,
+    transparent 2px,
+    transparent 7px
+  );
 }
 :where(.dark, .dark *) .user-annotation-2 {
-  background-color: rgba(251, 146, 60, 0.38);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.45) 0px,
+    rgba(251, 146, 60, 0.45) 2px,
+    transparent 2px,
+    transparent 6px
+  );
 }
 :where(.dark, .dark *) .user-annotation-3 {
-  background-color: rgba(251, 146, 60, 0.58);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(251, 146, 60, 0.6) 0px,
+    rgba(251, 146, 60, 0.6) 3px,
+    transparent 3px,
+    transparent 6px
+  );
 }
 
 /* Annotation painting cursor */

@@ -15,6 +15,7 @@ interface UserAnnotationState {
   activeTool: 'highlight' | 'eraser';
   selectedLevel: AnnotationLevel;
   hasAnnotations: boolean;
+  annotationRanges: Array<{ from: number; to: number; level: number }>;
 }
 
 interface UserAnnotationActions {
@@ -22,6 +23,7 @@ interface UserAnnotationActions {
   setActiveTool: (tool: 'highlight' | 'eraser') => void;
   setSelectedLevel: (level: AnnotationLevel) => void;
   setHasAnnotations: (has: boolean) => void;
+  setAnnotationRanges: (ranges: Array<{ from: number; to: number; level: number }>) => void;
 }
 
 type UserAnnotationStore = UserAnnotationState & UserAnnotationActions;
@@ -33,6 +35,7 @@ export const useUserAnnotationStore = create<UserAnnotationStore>()((set) => ({
   activeTool: 'highlight',
   selectedLevel: 2,
   hasAnnotations: false,
+  annotationRanges: [],
 
   toggleAnnotationMode: () => {
     set((state) => ({
@@ -51,5 +54,9 @@ export const useUserAnnotationStore = create<UserAnnotationStore>()((set) => ({
 
   setHasAnnotations: (has) => {
     set({ hasAnnotations: has });
+  },
+
+  setAnnotationRanges: (ranges) => {
+    set({ annotationRanges: ranges, hasAnnotations: ranges.length > 0 });
   },
 }));

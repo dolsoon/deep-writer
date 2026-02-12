@@ -19,7 +19,7 @@
 
 ### Magic Wand Cursor (Nudging UI)
 - [x] Tooltip 내 original text/suggestion 위에 마우스 올리면 커서를 magic wand로 변경 (keep/delete 기능 존재를 시각적으로 알려주는 역할)
-  - Inline SVG highlighter pen cursor (magic wand -> highlighter pen으로 변경) in `globals.css` (light/dark mode)
+  - ~~Inline SVG highlighter pen cursor (magic wand -> highlighter pen으로 변경)~~ → 기본 pointer cursor로 복원 in `globals.css`
 - [x] 현재는 여러 번 클릭, 드래그하여 변경하도록 하는 UI에서, Magic wand 커서 상태에서 클릭/드래그시  툴팁에 Keep / Positive / Negative / Delete가 뜨면서 사용자의 의도를 전달할 수 있도록 하는 UI로 변경
   - Removed old 3-state painting/drag mode entirely from `AnnotatableText.tsx`
   - New interaction: drag to select word range -> `WordAnnotationPopup` appears with 4 buttons (Del / - / + / Keep)
@@ -120,15 +120,16 @@
   - `useUserAnnotationStore.ts`: `selectedLevel` 상태 + `setSelectedLevel()` 액션 추가, `AnnotationLevel` 타입 및 `ANNOTATION_LEVEL_LABELS` 내보내기
   - `AppHeader.tsx`: highlight/eraser 토글 → 3개 레벨 버튼 (색상 swatch 포함) + eraser 버튼으로 교체
   - `CoWriThinkEditor.tsx`: `annotationLevel` store→plugin 동기화 useEffect 추가
-  - `globals.css`: 5단계 → 3단계 CSS (15%/35%/55% opacity)
+  - `globals.css`: ~~5단계 → 3단계 CSS (15%/35%/55% opacity)~~ → diagonal stripe 패턴으로 변경 (repeating-linear-gradient, 레벨별 밀도/투명도 차등)
 - [x] 지우개 도구로 기존 하이라이팅 제거 가능
-- [x] 하이라이팅 완료 후 "Actual AI" / "Your View" 토글로 실제 AI 의존도와 비교
-  - `useInspectStore.ts`: `comparisonView` 상태 (`'actual' | 'user'`) 및 `setComparisonView`/`toggleComparisonView` 액션 추가
-  - `useUserAnnotationStore.ts`: `hasAnnotations` 플래그 추가 (annotation 존재 여부 추적)
-  - `AppHeader.tsx`: highlight 모드 + annotation 존재 시 "Actual AI" / "Your View" 토글 버튼 표시
-  - `CoWriThinkEditor.tsx`: comparisonView에 따라 contribution overlay와 annotation decoration 전환, annotation 모드 진입 시 자동 user view 전환
-  - `UserAnnotationPlugin.ts`: `forceShow` 메타 + `showAnnotationDecorations()` 헬퍼 추가
-  - `InspectPanel.tsx`: user view일 때 PerceptionComparison을 상단에 배치, annotation 실시간 반영을 위한 transaction listener 추가
+- [x] ~~하이라이팅 완료 후 "Actual AI" / "Your View" 토글로 실제 AI 의존도와 비교~~ → 토글 제거, 두 레이어 동시 표시로 변경
+  - ~~`useInspectStore.ts`: `comparisonView` 상태 제거~~ — `comparisonView` 의존성 전면 제거
+  - `CoWriThinkEditor.tsx`: annotation stripes + contribution overlay 동시 표시 (highlight/inspect 모드에서 모두), comparisonView 토글 로직 제거
+  - `AppHeader.tsx`: "Actual AI" / "Your View" 토글 버튼 제거
+  - `InspectPanel.tsx`: comparisonView 조건 분기 제거, PerceptionComparison 항상 DocumentLevelView 하단에 표시
+  - `useUserAnnotationStore.ts`: `annotationRanges` 배열 추가 (annotation 위치/레벨 전체 추적)
+  - `useSessionStore.ts`: session export에 `userAnnotations` 포함
+  - `session.ts`: `Session` 타입에 `userAnnotations` 필드 추가
 
 ---
 
